@@ -1,0 +1,6 @@
+{
+  "name": "Vira",
+  "description": "Acompanha as tuas recolhas de embalagens e devoluções em Portugal.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
