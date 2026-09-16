@@ -12,10 +12,10 @@ plugins {
 
 android {
   namespace = "com.example"
-  compileSdk { version = release(36) { minorApiLevel = 1 } }
+  compileSdk = 37
 
   defaultConfig {
-    applicationId = "com.aistudio.retorna.pt"
+    applicationId = "pt.vira.app"
     minSdk = 24
     targetSdk = 36
     versionCode = 1
@@ -121,7 +121,11 @@ dependencies {
   implementation(libs.okhttp)
   implementation(libs.play.services.location)
   implementation("org.maplibre.compose:maplibre-compose:0.16.0")
+  implementation("org.maplibre.compose:location-runtime-gms:0.16.0")
+  runtimeOnly("org.maplibre.compose:maplibre-compose-runtime-opengl-android:0.16.0")
   implementation(libs.retrofit)
+  implementation(libs.androidx.work.runtime.ktx)
+  testImplementation(libs.androidx.work.testing)
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)
   testImplementation(libs.androidx.junit)

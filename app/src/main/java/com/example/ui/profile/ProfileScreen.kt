@@ -1,117 +1,319 @@
 package com.example.ui.profile
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.ViraApp
+import com.example.domain.ContainerBalance
+import com.example.ui.components.ViraMetric
+import com.example.ui.components.ViraSectionHeader
+import com.example.ui.components.ViraSurfaceCard
+import com.example.ui.components.ViraTopBar
+import com.example.ui.theme.LocalViraExtraColors
+import com.example.ui.theme.ViraIconSize
+import com.example.ui.theme.ViraSpacing
+import com.example.ui.theme.ViraTypography
+import com.example.util.FormatUtils
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun ProfileScreen() {
-    var darkModeEnabled by remember { mutableStateOf(false) } // Placeholder for actual settings
+    val context = LocalContext.current
+    val appContainer = (context.applicationContext as ViraApp).container
+    val scope = rememberCoroutineScope()
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Spacer(modifier = Modifier.height(32.dp))
-        
-        Box(
+    val balance by appContainer.balanceService.observeBalance().collectAsStateWithLifecycle(
+        initialValue = ContainerBalance(0, 0, 0, 0L, 0L, 0L)
+    )
+    val userProfile by appContainer.userRepository.getUserProfile().collectAsStateWithLifecycle(null)
+
+    var showClearDataDialog by remember { mutableStateOf(false) }
+
+    val memberDateText = remember(userProfile) {
+        val timestamp = userProfile?.memberSince ?: System.currentTimeMillis()
+        val dateFormat = SimpleDateFormat("MMMM yyyy", Locale.forLanguageTag("pt-PT"))
+        "Membro desde ${dateFormat.format(Date(timestamp)).replaceFirstChar { it.uppercase() }}"
+    }
+
+    Scaffold { innerPadding ->
+        LazyColumn(
             modifier = Modifier
-                .size(100.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primaryContainer),
-            contentAlignment = Alignment.Center
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(horizontal = ViraSpacing.space24),
+            contentPadding = PaddingValues(bottom = ViraSpacing.space48)
         ) {
-            Icon(
-                imageVector = Icons.Outlined.Person,
-                contentDescription = "Avatar",
-                modifier = Modifier.size(48.dp),
-                tint = MaterialTheme.colorScheme.onPrimaryContainer
+            item {
+                ViraTopBar(title = "Perfil", subtitle = "Preferências e conta")
+                Spacer(modifier = Modifier.height(ViraSpacing.space16))
+            }
+
+            // USER AVATAR & IDENTITY
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(64.dp)
+                            .clip(CircleShape)
+                            .background(LocalViraExtraColors.current.surfaceElevated),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = "Avatar",
+                            modifier = Modifier.size(ViraIconSize.large),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(ViraSpacing.space16))
+                    Column {
+                        Text(
+                            text = userProfile?.name ?: "Utilizador Vira",
+                            style = ViraTypography.MetricMedium,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                        Spacer(modifier = Modifier.height(ViraSpacing.space4))
+                        Text(
+                            text = memberDateText,
+                            style = ViraTypography.BodySecondary,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(ViraSpacing.space24))
+            }
+
+            // LIFETIME SUMMARY
+            item {
+                ViraSurfaceCard(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "TOTAL VITALÍCIO",
+                        style = ViraTypography.SectionTitle,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(ViraSpacing.space16))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        ViraMetric(
+                            label = "Recolhidas",
+                            value = "${balance.containersCollected}",
+                            modifier = Modifier.weight(1f)
+                        )
+                        ViraMetric(
+                            label = "Recuperado",
+                            value = FormatUtils.formatCurrency(balance.recoveredValueCents),
+                            modifier = Modifier.weight(1f),
+                            valueColor = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(ViraSpacing.space24))
+            }
+
+            // SETTINGS & PREFERENCES
+            item {
+                ViraSectionHeader(title = "Definições")
+                Spacer(modifier = Modifier.height(ViraSpacing.space8))
+                ViraSurfaceCard(modifier = Modifier.fillMaxWidth()) {
+                    ProfileSettingsRow(
+                        icon = Icons.Default.Flag,
+                        title = "Meta mensal",
+                        value = "500 embalagens"
+                    )
+                    ProfileDivider()
+                    ProfileSettingsRow(
+                        icon = Icons.Default.DarkMode,
+                        title = "Tema visual",
+                        value = "Sistema"
+                    )
+                    ProfileDivider()
+                    ProfileSettingsRow(
+                        icon = Icons.Default.Download,
+                        title = "Exportar dados",
+                        value = "JSON"
+                    )
+                    ProfileDivider()
+                    ProfileSettingsRow(
+                        icon = Icons.Default.Security,
+                        title = "Privacidade e dados locais",
+                        value = "No dispositivo"
+                    )
+                }
+                Spacer(modifier = Modifier.height(ViraSpacing.space24))
+            }
+
+            // DANGER ZONE
+            item {
+                ViraSurfaceCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showClearDataDialog = true }
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(ViraIconSize.medium)
+                            )
+                            Spacer(modifier = Modifier.width(ViraSpacing.space16))
+                            Text(
+                                text = "Eliminar todos os dados",
+                                style = ViraTypography.ButtonLabel,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.Default.ChevronRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(ViraIconSize.small)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(ViraSpacing.space32))
+            }
+
+            // ABOUT VIRA FOOTER
+            item {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "Vira v1.0",
+                        style = ViraTypography.Caption,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(ViraSpacing.space4))
+                    Text(
+                        text = "Aplicação independente e data-focused. Todos os dados são guardados de forma estritamente local.",
+                        style = ViraTypography.Caption,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        }
+
+        if (showClearDataDialog) {
+            AlertDialog(
+                onDismissRequest = { showClearDataDialog = false },
+                title = { Text("Eliminar todos os dados?") },
+                text = { Text("Esta ação apagará permanentemente todas as recolhas, devoluções e spots locais.") },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            scope.launch(Dispatchers.IO) {
+                                appContainer.userRepository.clearAllUserData()
+                            }
+                            showClearDataDialog = false
+                        }
+                    ) {
+                        Text("Apagar", color = MaterialTheme.colorScheme.error)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showClearDataDialog = false }) {
+                        Text("Cancelar")
+                    }
+                }
             )
         }
-        
-        Spacer(modifier = Modifier.height(24.dp))
-        
+    }
+}
+
+@Composable
+private fun ProfileSettingsRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    value: String
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = ViraSpacing.space8),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(ViraIconSize.medium)
+            )
+            Spacer(modifier = Modifier.width(ViraSpacing.space16))
+            Text(text = title, style = ViraTypography.Body)
+        }
         Text(
-            text = "Olá,",
-            style = MaterialTheme.typography.bodyLarge,
+            text = value,
+            style = ViraTypography.BodySecondary,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Text(
-            text = "Reciclador",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary
-        )
-        
-        Spacer(modifier = Modifier.height(48.dp))
-        
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(24.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-        ) {
-            ListItem(
-                headlineContent = { Text("Tema Escuro", style = MaterialTheme.typography.bodyLarge) },
-                leadingContent = { Icon(Icons.Default.DarkMode, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
-                trailingContent = { 
-                    Switch(
-                        checked = darkModeEnabled,
-                        onCheckedChange = { darkModeEnabled = it }
-                    ) 
-                },
-                colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent)
-            )
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), modifier = Modifier.padding(horizontal = 16.dp))
-            ListItem(
-                headlineContent = { Text("Exportar Dados", style = MaterialTheme.typography.bodyLarge) },
-                leadingContent = { Icon(Icons.Default.Download, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
-                trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
-                colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent)
-            )
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), modifier = Modifier.padding(horizontal = 16.dp))
-            ListItem(
-                headlineContent = { Text("Privacidade", style = MaterialTheme.typography.bodyLarge) },
-                leadingContent = { Icon(Icons.Default.Security, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
-                trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
-                colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent)
-            )
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), modifier = Modifier.padding(horizontal = 16.dp))
-            ListItem(
-                headlineContent = { Text("Apagar todos os dados", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyLarge) },
-                leadingContent = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
-                colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent)
-            )
-        }
-        
-        Spacer(modifier = Modifier.weight(1f))
-        
-        Text(
-            text = "Esta aplicação é independente e não representa nem é afiliada à SDR Portugal ou à marca volta.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(16.dp)
-        )
-        Spacer(modifier = Modifier.height(16.dp))
     }
+}
+
+@Composable
+private fun ProfileDivider() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(1.dp)
+            .background(LocalViraExtraColors.current.divider)
+    )
 }

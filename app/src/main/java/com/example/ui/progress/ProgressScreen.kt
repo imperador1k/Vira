@@ -1,209 +1,274 @@
 package com.example.ui.progress
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ViraApp
+import com.example.ui.components.ViraEmptyState
+import com.example.ui.components.ViraPeriodSelector
+import com.example.ui.components.ViraProgressBar
+import com.example.ui.components.ViraSurfaceCard
+import com.example.ui.components.ViraTimeSeriesChart
+import com.example.ui.components.ViraTopBar
+import com.example.ui.theme.ViraSpacing
+import com.example.ui.theme.ViraTypography
 import com.example.util.FormatUtils
 
 @Composable
-fun ProgressScreen() {
+fun ProgressScreen(
+    onNavigateToSpot: (Int) -> Unit = {}
+) {
     val context = LocalContext.current
     val appContainer = (context.applicationContext as ViraApp).container
-    
+
     val viewModel: ProgressViewModel = viewModel(
-        factory = ProgressViewModelFactory(appContainer.collectionRepository, appContainer.balanceService)
-    )
-    
-    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 24.dp),
-        contentPadding = PaddingValues(top = 24.dp, bottom = 48.dp)
-    ) {
-        item {
-            Text(
-                text = "Progresso",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.height(32.dp))
-        }
-        
-        item {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(24.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant
-            ) {
-                Column(modifier = Modifier.padding(24.dp)) {
-                    Text("Total recolhido", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "${uiState.balance.containersCollected}",
-                        style = MaterialTheme.typography.displayLarge.copy(
-                            fontWeight = FontWeight.Light,
-                            letterSpacing = (-2).sp
-                        ),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-        }
-
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Surface(
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(24.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                ) {
-                    Column(modifier = Modifier.padding(24.dp)) {
-                        Text("Devolvidas", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "${uiState.balance.containersAccepted}",
-                            style = MaterialTheme.typography.headlineMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-                Surface(
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(24.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                ) {
-                    Column(modifier = Modifier.padding(24.dp)) {
-                        Text("Taxa de devolução", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = String.format("%.0f%%", uiState.returnRate),
-                            style = MaterialTheme.typography.headlineMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-        }
-        
-        item {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(24.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-            ) {
-                Column(modifier = Modifier.padding(24.dp)) {
-                    Text("Valor recuperado", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = FormatUtils.formatCurrency(uiState.balance.recoveredValueCents),
-                        style = MaterialTheme.typography.headlineMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    
-                    Spacer(modifier = Modifier.height(24.dp))
-                    
-                    // Simple Progress Bar
-                    val progress = if (uiState.balance.potentialValueCents > 0) {
-                        uiState.balance.recoveredValueCents.toFloat() / uiState.balance.potentialValueCents.toFloat()
-                    } else 0f
-                    
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(8.dp)
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth(fraction = progress.coerceIn(0f, 1f))
-                                .fillMaxHeight()
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(MaterialTheme.colorScheme.primary)
-                        )
-                    }
-                    
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Recuperado", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(FormatUtils.formatCurrency(uiState.balance.potentialValueCents) + " potencial", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(48.dp))
-        }
-
-        item {
-            Text(
-                text = "Estatísticas de recolha",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-            Spacer(modifier = Modifier.height(24.dp))
-            
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                StatCard(
-                    modifier = Modifier.weight(1f),
-                    title = "Sessões",
-                    value = "${uiState.totalCollections}"
-                )
-                StatCard(
-                    modifier = Modifier.weight(1f),
-                    title = "Média",
-                    value = String.format("%.1f", uiState.averagePerCollection)
-                )
-                StatCard(
-                    modifier = Modifier.weight(1f),
-                    title = "Dias",
-                    value = "${uiState.activeDays}"
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun StatCard(modifier: Modifier = Modifier, title: String, value: String) {
-    Column(
-        modifier = modifier
-            .background(MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(16.dp))
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = value,
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface
+        factory = ProgressViewModelFactory(
+            collectionRepository = appContainer.collectionRepository,
+            redemptionRepository = appContainer.redemptionRepository,
+            spotRepository = appContainer.spotRepository,
+            balanceService = appContainer.balanceService
         )
+    )
+
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val periodLabels = listOf("7 dias", "30 dias", "Mês", "Ano", "Sempre")
+
+    Scaffold { innerPadding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(horizontal = ViraSpacing.space24),
+            contentPadding = PaddingValues(bottom = ViraSpacing.space48)
+        ) {
+            item {
+                ViraTopBar(title = "Progresso", subtitle = "Análise e tendências")
+                Spacer(modifier = Modifier.height(ViraSpacing.space16))
+                ViraPeriodSelector(
+                    periods = periodLabels,
+                    selectedIndex = uiState.selectedPeriodIndex,
+                    onSelectPeriod = { viewModel.selectPeriod(it) }
+                )
+                Spacer(modifier = Modifier.height(ViraSpacing.space24))
+            }
+
+            if (uiState.periodContainers == 0) {
+                item {
+                    ViraEmptyState(
+                        title = "Sem registos neste período",
+                        subtitle = "Regista recolhas de embalagens para acompanhares o teu progresso, valor acumulado e tendências.",
+                        ctaText = "Ver todos os períodos",
+                        onCtaClick = { viewModel.selectPeriod(4) }
+                    )
+                }
+            } else {
+                // HERO NUMBER & TREND
+                item {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = "${uiState.periodContainers}",
+                            style = ViraTypography.HeroNumber,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                        Spacer(modifier = Modifier.height(ViraSpacing.space4))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(ViraSpacing.space8)
+                        ) {
+                            Text(
+                                text = "embalagens",
+                                style = ViraTypography.BodySecondary,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            uiState.periodTrendPercentage?.let { trend ->
+                                val trendText = if (trend >= 0) "+$trend% vs período anterior" else "$trend% vs período anterior"
+                                val trendColor = if (trend >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                                Text(
+                                    text = trendText,
+                                    style = ViraTypography.Caption,
+                                    color = trendColor
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(ViraSpacing.space24))
+                }
+
+                // TIME-SERIES CHART
+                if (uiState.chartDataPoints.size >= 2) {
+                    item {
+                        ViraTimeSeriesChart(
+                            data = uiState.chartDataPoints,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(ViraSpacing.space24))
+                    }
+                }
+
+                // OPEN LAYOUT METRICS (No giant enclosing box)
+                item {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(ViraSpacing.space24)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = FormatUtils.formatCurrency(uiState.potentialValueCents),
+                                    style = ViraTypography.MetricLarge,
+                                    color = MaterialTheme.colorScheme.onBackground
+                                )
+                                Text(
+                                    text = "POTENCIAL",
+                                    style = ViraTypography.SectionTitle,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = FormatUtils.formatCurrency(uiState.recoveredValueCents),
+                                    style = ViraTypography.MetricLarge,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = "RECUPERADO",
+                                    style = ViraTypography.SectionTitle,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "${uiState.totalSessions}",
+                                    style = ViraTypography.MetricLarge,
+                                    color = MaterialTheme.colorScheme.onBackground
+                                )
+                                Text(
+                                    text = "SESSÕES",
+                                    style = ViraTypography.SectionTitle,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = String.format("%.1f", uiState.averagePerSession),
+                                    style = ViraTypography.MetricLarge,
+                                    color = MaterialTheme.colorScheme.onBackground
+                                )
+                                Text(
+                                    text = "MÉDIA / SESSÃO",
+                                    style = ViraTypography.SectionTitle,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(ViraSpacing.space32))
+                }
+
+                // TAXA DE DEVOLUÇÃO (Thin Progress)
+                item {
+                    val returnPercent = (uiState.returnRate * 100).toInt()
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Taxa de devolução",
+                                style = ViraTypography.Body,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "$returnPercent%",
+                                style = ViraTypography.MetricMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(ViraSpacing.space8))
+                        ViraProgressBar(
+                            progress = uiState.returnRate,
+                            height = 4.dp
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(ViraSpacing.space32))
+                }
+
+                // MELHOR SPOT
+                uiState.bestSpot?.let { spot ->
+                    item {
+                        ViraSurfaceCard(modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                text = "MELHOR SPOT",
+                                style = ViraTypography.SectionTitle,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(ViraSpacing.space8))
+                            Text(
+                                text = spot.name,
+                                style = ViraTypography.MetricMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(ViraSpacing.space4))
+                            Text(
+                                text = "${String.format("%.1f", spot.averageContainersPerVisit)} embalagens / visita · ${spot.lifetimeContainers} recolhidas",
+                                style = ViraTypography.BodySecondary,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(ViraSpacing.space12))
+                            Row(
+                                modifier = Modifier
+                                    .clickable { onNavigateToSpot(spot.id) }
+                                    .padding(vertical = ViraSpacing.space4),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(ViraSpacing.space4)
+                            ) {
+                                Text(
+                                    text = "Ver detalhes do local",
+                                    style = ViraTypography.ButtonLabel,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

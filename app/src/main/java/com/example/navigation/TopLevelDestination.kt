@@ -26,7 +26,7 @@ enum class TopLevelDestination(
     MAP(
         icon = Icons.Default.Map,
         titleTextId = "Mapa",
-        route = MapRoute
+        route = MapRootRoute
     ),
     HISTORY(
         icon = Icons.Default.History,

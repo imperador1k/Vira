@@ -1,132 +1,209 @@
 package com.example.ui.redemption
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ViraApp
+import com.example.ui.components.ViraIconButton
+import com.example.ui.components.ViraPrimaryButton
+import com.example.ui.components.ViraSectionHeader
+import com.example.ui.components.ViraSurfaceCard
+import com.example.ui.theme.LocalViraExtraColors
+import com.example.ui.theme.ViraRadius
+import com.example.ui.theme.ViraSpacing
+import com.example.ui.theme.ViraTypography
+import com.example.util.Constants.DEPOSIT_VALUE_CENTS
+import com.example.util.FormatUtils
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RedemptionScreen(onNavigateUp: () -> Unit) {
     val context = LocalContext.current
     val appContainer = (context.applicationContext as ViraApp).container
-    
+
     val viewModel: RedemptionViewModel = viewModel(
         factory = RedemptionViewModelFactory(appContainer.redemptionRepository)
     )
 
-    var presented by remember { mutableStateOf("") }
-    var accepted by remember { mutableStateOf("") }
-    var rejected by remember { mutableStateOf("") }
+    var presentedText by remember { mutableStateOf("") }
+    var acceptedText by remember { mutableStateOf("") }
+    var rejectedText by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
 
-    // Derived logic for auto-calculating accepted/rejected
-    LaunchedEffect(presented, accepted) {
-        val p = presented.toIntOrNull() ?: 0
-        val a = accepted.toIntOrNull()
-        if (p > 0 && a != null && a <= p) {
-            rejected = (p - a).toString()
+    val presented = presentedText.toIntOrNull() ?: 0
+    val accepted = acceptedText.toIntOrNull() ?: 0
+    val rejected = rejectedText.toIntOrNull() ?: 0
+
+    // Auto-calculate rejected when presented or accepted changes
+    LaunchedEffect(presentedText, acceptedText) {
+        if (presented > 0 && acceptedText.isNotBlank() && accepted <= presented) {
+            rejectedText = (presented - accepted).toString()
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Registar devolução") },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateUp) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar")
-                    }
-                }
-            )
-        }
-    ) { innerPadding ->
+    val recoveredCents = accepted * DEPOSIT_VALUE_CENTS
+    val isValid = presented > 0 && accepted >= 0 && rejected >= 0 && (accepted + rejected <= presented)
+
+    Scaffold { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(24.dp)
+                .padding(horizontal = ViraSpacing.space24)
+                .verticalScroll(rememberScrollState())
         ) {
-            Text(
-                text = "Detalhes",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold
+            // Top Bar
+            Spacer(modifier = Modifier.height(ViraSpacing.space16))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                ViraIconButton(
+                    icon = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Voltar",
+                    onClick = onNavigateUp
+                )
+                Spacer(modifier = Modifier.width(ViraSpacing.space16))
+                Text(text = "Registar devolução", style = ViraTypography.PageTitle)
+            }
+
+            Spacer(modifier = Modifier.height(ViraSpacing.space24))
+
+            // RECOVERED VALUE HERO CARD
+            ViraSurfaceCard(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "VALOR RECUPERADO",
+                    style = ViraTypography.SectionTitle,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(ViraSpacing.space8))
+                Text(
+                    text = FormatUtils.formatCurrency(recoveredCents),
+                    style = ViraTypography.HeroNumber,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = "$accepted aceites · 0,10 € por embalagem",
+                    style = ViraTypography.BodySecondary,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Spacer(modifier = Modifier.height(ViraSpacing.space24))
+            ViraSectionHeader(title = "Embalagens")
+            Spacer(modifier = Modifier.height(ViraSpacing.space8))
+
+            // Inputs
+            val textFieldColors = OutlinedTextFieldDefaults.colors(
+                focusedContainerColor = LocalViraExtraColors.current.surfaceElevated,
+                unfocusedContainerColor = LocalViraExtraColors.current.surfaceElevated,
+                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                unfocusedBorderColor = LocalViraExtraColors.current.divider
             )
-            Spacer(modifier = Modifier.height(32.dp))
 
             OutlinedTextField(
-                value = presented,
-                onValueChange = { presented = it },
-                label = { Text("Embalagens apresentadas") },
+                value = presentedText,
+                onValueChange = {
+                    presentedText = it
+                    if (acceptedText.isBlank()) acceptedText = it
+                },
+                label = { Text("Apresentadas na máquina", style = ViraTypography.Caption) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(ViraRadius.medium),
+                colors = textFieldColors
             )
-            Spacer(modifier = Modifier.height(16.dp))
 
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Spacer(modifier = Modifier.height(ViraSpacing.space12))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(ViraSpacing.space12)
+            ) {
                 OutlinedTextField(
-                    value = accepted,
-                    onValueChange = { accepted = it },
-                    label = { Text("Aceites") },
+                    value = acceptedText,
+                    onValueChange = { acceptedText = it },
+                    label = { Text("Aceites", style = ViraTypography.Caption) },
                     modifier = Modifier.weight(1f),
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(ViraRadius.medium),
+                    colors = textFieldColors
                 )
 
                 OutlinedTextField(
-                    value = rejected,
-                    onValueChange = { rejected = it },
-                    label = { Text("Rejeitadas") },
+                    value = rejectedText,
+                    onValueChange = { rejectedText = it },
+                    label = { Text("Rejeitadas", style = ViraTypography.Caption) },
                     modifier = Modifier.weight(1f),
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(ViraRadius.medium),
+                    colors = textFieldColors
                 )
             }
-            Spacer(modifier = Modifier.height(16.dp))
+
+            Spacer(modifier = Modifier.height(ViraSpacing.space12))
 
             OutlinedTextField(
                 value = note,
                 onValueChange = { note = it },
-                label = { Text("Nota (opcional)") },
+                label = { Text("Local ou nota (opcional)", style = ViraTypography.Caption) },
                 modifier = Modifier.fillMaxWidth(),
-                maxLines = 3,
-                shape = RoundedCornerShape(12.dp)
+                maxLines = 2,
+                shape = RoundedCornerShape(ViraRadius.medium),
+                colors = textFieldColors
             )
-            Spacer(modifier = Modifier.height(48.dp))
 
-            val p = presented.toIntOrNull() ?: 0
-            val a = accepted.toIntOrNull() ?: 0
-            val r = rejected.toIntOrNull() ?: 0
-            val isValid = p > 0 && a >= 0 && r >= 0 && (a + r <= p)
+            Spacer(modifier = Modifier.height(ViraSpacing.space32))
 
-            Button(
+            ViraPrimaryButton(
+                text = if (isValid) "Confirmar devolução (${FormatUtils.formatCurrency(recoveredCents)})" else "Confirmar devolução",
                 onClick = {
-                    viewModel.saveRedemption(p, a, r, null, note.ifBlank { null })
+                    viewModel.saveRedemption(presented, accepted, rejected, null, note.ifBlank { null })
                     onNavigateUp()
                 },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                enabled = isValid,
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Text("Confirmar devolução", style = MaterialTheme.typography.titleMedium)
-            }
+                modifier = Modifier.fillMaxWidth(),
+                enabled = isValid
+            )
+
+            Spacer(modifier = Modifier.height(ViraSpacing.space32))
         }
     }
 }

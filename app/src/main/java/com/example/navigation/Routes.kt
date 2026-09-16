@@ -9,7 +9,10 @@ object HomeRoute
 object ProgressRoute
 
 @Serializable
-object MapRoute
+object MapRootRoute
+
+@Serializable
+object MapPickerRoute
 
 @Serializable
 object HistoryRoute
