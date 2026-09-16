@@ -3,7 +3,88 @@
 -- Migration File: supabase/migrations/20260916_secure_sync_rpc_and_rls.sql
 -- ==============================================================================
 
--- 1. Explicit targeted revokes on Vira private tables and sequences (avoiding blind blanket revokes)
+-- 1. Ensure Global Sequence exists
+create sequence if not exists public.global_sync_version_seq as bigint start with 1 increment by 1;
+
+-- 2. Drop legacy identities and column defaults to eliminate double nextval invocations
+alter table public.user_profiles alter column server_version drop identity if exists;
+alter table public.user_profiles alter column server_version drop default;
+
+alter table public.collection_spots alter column server_version drop identity if exists;
+alter table public.collection_spots alter column server_version drop default;
+
+alter table public.collection_entries alter column server_version drop identity if exists;
+alter table public.collection_entries alter column server_version drop default;
+
+alter table public.redemption_entries alter column server_version drop identity if exists;
+alter table public.redemption_entries alter column server_version drop default;
+
+alter table public.goals alter column server_version drop identity if exists;
+alter table public.goals alter column server_version drop default;
+
+-- 3. Register server metadata trigger function
+create or replace function public.assign_server_sync_metadata()
+returns trigger as $$
+begin
+    new.server_version = nextval('public.global_sync_version_seq');
+    new.server_updated_at = now();
+    return new;
+end;
+$$ language plpgsql;
+
+-- 4. Register BEFORE INSERT OR UPDATE triggers on all 5 private sync tables
+drop trigger if exists trg_user_profiles_sync_metadata on public.user_profiles;
+create trigger trg_user_profiles_sync_metadata
+before insert or update on public.user_profiles
+for each row execute function public.assign_server_sync_metadata();
+
+drop trigger if exists trg_collection_spots_sync_metadata on public.collection_spots;
+create trigger trg_collection_spots_sync_metadata
+before insert or update on public.collection_spots
+for each row execute function public.assign_server_sync_metadata();
+
+drop trigger if exists trg_collection_entries_sync_metadata on public.collection_entries;
+create trigger trg_collection_entries_sync_metadata
+before insert or update on public.collection_entries
+for each row execute function public.assign_server_sync_metadata();
+
+drop trigger if exists trg_redemption_entries_sync_metadata on public.redemption_entries;
+create trigger trg_redemption_entries_sync_metadata
+before insert or update on public.redemption_entries
+for each row execute function public.assign_server_sync_metadata();
+
+drop trigger if exists trg_goals_sync_metadata on public.goals;
+create trigger trg_goals_sync_metadata
+before insert or update on public.goals
+for each row execute function public.assign_server_sync_metadata();
+
+-- 5. Safe Monotonic Sequence Initialization (never moves sequence backwards)
+do $$
+declare
+    v_max_existing bigint;
+    v_current_seq bigint;
+    v_target bigint;
+begin
+    select coalesce(max(mv), 0) into v_max_existing from (
+        select coalesce(max(server_version), 0) as mv from public.user_profiles
+        union all
+        select coalesce(max(server_version), 0) as mv from public.collection_spots
+        union all
+        select coalesce(max(server_version), 0) as mv from public.collection_entries
+        union all
+        select coalesce(max(server_version), 0) as mv from public.redemption_entries
+        union all
+        select coalesce(max(server_version), 0) as mv from public.goals
+    ) as sub;
+
+    select last_value into v_current_seq from public.global_sync_version_seq;
+
+    v_target := greatest(v_max_existing, v_current_seq, 1);
+
+    perform setval('public.global_sync_version_seq', v_target, true);
+end $$;
+
+-- 6. Explicit targeted revokes on Vira private tables and sequences (avoiding blind blanket revokes)
 revoke all on table public.user_profiles from anon, public;
 revoke all on table public.collection_spots from anon, public;
 revoke all on table public.collection_entries from anon, public;
@@ -12,7 +93,7 @@ revoke all on table public.goals from anon, public;
 
 revoke all on sequence public.global_sync_version_seq from anon, public;
 
--- 2. Grant explicit minimal privileges only to authenticated role
+-- 7. Grant explicit minimal privileges only to authenticated role
 grant select, insert, update, delete on table
     public.user_profiles,
     public.collection_spots,
@@ -23,7 +104,7 @@ to authenticated;
 
 grant usage on sequence public.global_sync_version_seq to authenticated;
 
--- 3. Configure secure default privileges for future objects created in schema public
+-- 8. Configure secure default privileges for future objects created in schema public
 -- Prevents newly created tables/functions from automatically exposing themselves to anon/public
 alter default privileges in schema public revoke execute on functions from public, anon;
 alter default privileges in schema public revoke all on tables from anon, public;
