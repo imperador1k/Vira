@@ -263,22 +263,32 @@ create policy "Users can delete own goals"
     to authenticated
     using (user_id = (select auth.uid()));
 
--- 11. Table & Sequence Grants (Revoke all from anon/public; grant to authenticated)
-revoke all on all tables in schema public from anon, public;
-revoke all on all sequences in schema public from anon, public;
-revoke all on all functions in schema public from anon, public;
+-- 11. Targeted Table & Sequence Grants
+-- Explicit revokes on private Vira sync objects (avoiding blanket revokes that affect unrelated/public objects)
+revoke all on table public.user_profiles from anon, public;
+revoke all on table public.collection_spots from anon, public;
+revoke all on table public.collection_entries from anon, public;
+revoke all on table public.redemption_entries from anon, public;
+revoke all on table public.goals from anon, public;
+revoke all on sequence public.global_sync_version_seq from anon, public;
 
+-- Grant minimal necessary permissions to authenticated role
 grant select, insert, update, delete on table
     public.user_profiles,
     public.collection_spots,
     public.collection_entries,
     public.redemption_entries,
     public.goals
-to authenticated, service_role;
+to authenticated;
 
-grant usage on sequence public.global_sync_version_seq to authenticated, service_role;
+grant usage on sequence public.global_sync_version_seq to authenticated;
 
--- 12. Performance Composite Indexes for (user_id, server_version)
+-- 12. Default Privileges for Future Objects (Deny by default in schema public)
+alter default privileges in schema public revoke execute on functions from public, anon;
+alter default privileges in schema public revoke all on tables from anon, public;
+alter default privileges in schema public revoke all on sequences from anon, public;
+
+-- 13. Performance Composite Indexes for (user_id, server_version)
 create index if not exists idx_collection_entries_user_version on public.collection_entries (user_id, server_version);
 create index if not exists idx_collection_spots_user_version on public.collection_spots (user_id, server_version);
 create index if not exists idx_redemption_entries_user_version on public.redemption_entries (user_id, server_version);
@@ -286,7 +296,7 @@ create index if not exists idx_goals_user_version on public.goals (user_id, serv
 create index if not exists idx_user_profiles_user_version on public.user_profiles (user_id, server_version);
 
 -- ==============================================================================
--- 13. Corrective Sequence Initialization
+-- 14. Corrective Sequence Initialization
 -- Sets global_sync_version_seq to at least the highest server_version existing
 -- across all tables, never moving the sequence backwards.
 -- ==============================================================================
@@ -317,7 +327,7 @@ begin
 end $$;
 
 -- ==============================================================================
--- 14. Atomic Snapshot-Consistent Pull RPC (SECURITY INVOKER + User Isolated)
+-- 15. Atomic Snapshot-Consistent Pull RPC (SECURITY INVOKER + User Isolated)
 -- Requires authentication, filters strictly by caller auth.uid(), and returns
 -- consistent new_cursor evaluated inside caller permissions.
 -- ==============================================================================
@@ -400,6 +410,6 @@ begin
 end;
 $$ language plpgsql security invoker set search_path = public;
 
--- Restrict Execution to Authenticated Callers (Revoke from public & anon)
-revoke execute on function public.pull_sync_changes(bigint) from public, anon;
-grant execute on function public.pull_sync_changes(bigint) to authenticated, service_role;
+-- Restrict Execution to Authenticated Callers (Deny from public, anon, service_role)
+revoke execute on function public.pull_sync_changes(bigint) from public, anon, service_role;
+grant execute on function public.pull_sync_changes(bigint) to authenticated;
