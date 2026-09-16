@@ -139,30 +139,154 @@ create or replace trigger trg_goals_sync_metadata
 before insert or update on public.goals
 for each row execute function public.assign_server_sync_metadata();
 
--- 10. Enable Row Level Security (RLS) with permissive fallback for guest/anon dev sync
+-- 10. Enable Row Level Security (RLS) on all private sync tables
 alter table public.user_profiles enable row level security;
 alter table public.collection_spots enable row level security;
 alter table public.collection_entries enable row level security;
 alter table public.redemption_entries enable row level security;
 alter table public.goals enable row level security;
 
+-- Drop legacy permissive development policies
 drop policy if exists "Allow all operations for anon/authenticated in dev" on public.user_profiles;
-create policy "Allow all operations for anon/authenticated in dev" on public.user_profiles for all using (true) with check (true);
-
 drop policy if exists "Allow all operations for anon/authenticated in dev" on public.collection_spots;
-create policy "Allow all operations for anon/authenticated in dev" on public.collection_spots for all using (true) with check (true);
-
 drop policy if exists "Allow all operations for anon/authenticated in dev" on public.collection_entries;
-create policy "Allow all operations for anon/authenticated in dev" on public.collection_entries for all using (true) with check (true);
-
 drop policy if exists "Allow all operations for anon/authenticated in dev" on public.redemption_entries;
-create policy "Allow all operations for anon/authenticated in dev" on public.redemption_entries for all using (true) with check (true);
-
 drop policy if exists "Allow all operations for anon/authenticated in dev" on public.goals;
-create policy "Allow all operations for anon/authenticated in dev" on public.goals for all using (true) with check (true);
+
+-- Granular RLS Policies for user_profiles
+create policy "Users can select own profile"
+    on public.user_profiles for select
+    to authenticated
+    using (user_id = (select auth.uid()));
+
+create policy "Users can insert own profile"
+    on public.user_profiles for insert
+    to authenticated
+    with check (user_id = (select auth.uid()));
+
+create policy "Users can update own profile"
+    on public.user_profiles for update
+    to authenticated
+    using (user_id = (select auth.uid()))
+    with check (user_id = (select auth.uid()));
+
+create policy "Users can delete own profile"
+    on public.user_profiles for delete
+    to authenticated
+    using (user_id = (select auth.uid()));
+
+-- Granular RLS Policies for collection_spots
+create policy "Users can select own spots"
+    on public.collection_spots for select
+    to authenticated
+    using (user_id = (select auth.uid()));
+
+create policy "Users can insert own spots"
+    on public.collection_spots for insert
+    to authenticated
+    with check (user_id = (select auth.uid()));
+
+create policy "Users can update own spots"
+    on public.collection_spots for update
+    to authenticated
+    using (user_id = (select auth.uid()))
+    with check (user_id = (select auth.uid()));
+
+create policy "Users can delete own spots"
+    on public.collection_spots for delete
+    to authenticated
+    using (user_id = (select auth.uid()));
+
+-- Granular RLS Policies for collection_entries
+create policy "Users can select own collections"
+    on public.collection_entries for select
+    to authenticated
+    using (user_id = (select auth.uid()));
+
+create policy "Users can insert own collections"
+    on public.collection_entries for insert
+    to authenticated
+    with check (user_id = (select auth.uid()));
+
+create policy "Users can update own collections"
+    on public.collection_entries for update
+    to authenticated
+    using (user_id = (select auth.uid()))
+    with check (user_id = (select auth.uid()));
+
+create policy "Users can delete own collections"
+    on public.collection_entries for delete
+    to authenticated
+    using (user_id = (select auth.uid()));
+
+-- Granular RLS Policies for redemption_entries
+create policy "Users can select own redemptions"
+    on public.redemption_entries for select
+    to authenticated
+    using (user_id = (select auth.uid()));
+
+create policy "Users can insert own redemptions"
+    on public.redemption_entries for insert
+    to authenticated
+    with check (user_id = (select auth.uid()));
+
+create policy "Users can update own redemptions"
+    on public.redemption_entries for update
+    to authenticated
+    using (user_id = (select auth.uid()))
+    with check (user_id = (select auth.uid()));
+
+create policy "Users can delete own redemptions"
+    on public.redemption_entries for delete
+    to authenticated
+    using (user_id = (select auth.uid()));
+
+-- Granular RLS Policies for goals
+create policy "Users can select own goals"
+    on public.goals for select
+    to authenticated
+    using (user_id = (select auth.uid()));
+
+create policy "Users can insert own goals"
+    on public.goals for insert
+    to authenticated
+    with check (user_id = (select auth.uid()));
+
+create policy "Users can update own goals"
+    on public.goals for update
+    to authenticated
+    using (user_id = (select auth.uid()))
+    with check (user_id = (select auth.uid()));
+
+create policy "Users can delete own goals"
+    on public.goals for delete
+    to authenticated
+    using (user_id = (select auth.uid()));
+
+-- 11. Table & Sequence Grants (Revoke all from anon/public; grant to authenticated)
+revoke all on all tables in schema public from anon, public;
+revoke all on all sequences in schema public from anon, public;
+revoke all on all functions in schema public from anon, public;
+
+grant select, insert, update, delete on table
+    public.user_profiles,
+    public.collection_spots,
+    public.collection_entries,
+    public.redemption_entries,
+    public.goals
+to authenticated, service_role;
+
+grant usage on sequence public.global_sync_version_seq to authenticated, service_role;
+
+-- 12. Performance Composite Indexes for (user_id, server_version)
+create index if not exists idx_collection_entries_user_version on public.collection_entries (user_id, server_version);
+create index if not exists idx_collection_spots_user_version on public.collection_spots (user_id, server_version);
+create index if not exists idx_redemption_entries_user_version on public.redemption_entries (user_id, server_version);
+create index if not exists idx_goals_user_version on public.goals (user_id, server_version);
+create index if not exists idx_user_profiles_user_version on public.user_profiles (user_id, server_version);
 
 -- ==============================================================================
--- 11. Corrective Sequence Initialization
+-- 13. Corrective Sequence Initialization
 -- Sets global_sync_version_seq to at least the highest server_version existing
 -- across all tables, never moving the sequence backwards.
 -- ==============================================================================
@@ -193,13 +317,14 @@ begin
 end $$;
 
 -- ==============================================================================
--- 12. Atomic Snapshot-Consistent Pull RPC
--- Eliminates inter-table race conditions by returning all changes > p_since_cursor
--- and a consistent new_cursor evaluated inside a single atomic snapshot.
+-- 14. Atomic Snapshot-Consistent Pull RPC (SECURITY INVOKER + User Isolated)
+-- Requires authentication, filters strictly by caller auth.uid(), and returns
+-- consistent new_cursor evaluated inside caller permissions.
 -- ==============================================================================
 create or replace function public.pull_sync_changes(p_since_cursor bigint default 0)
 returns jsonb as $$
 declare
+    v_caller uuid;
     v_collections jsonb;
     v_spots jsonb;
     v_redemptions jsonb;
@@ -212,37 +337,48 @@ declare
     v_max_profile bigint;
     v_new_cursor bigint;
 begin
-    -- 1. Read collections
+    -- 1. Strict Authentication Requirement
+    v_caller := auth.uid();
+    if v_caller is null then
+        raise exception 'Unauthorized: authentication required' using errcode = '42501';
+    end if;
+
+    -- 2. Read caller's collections
     select coalesce(jsonb_agg(to_jsonb(c)), '[]'::jsonb), coalesce(max(c.server_version), p_since_cursor)
     into v_collections, v_max_collection
     from public.collection_entries c
-    where c.server_version > p_since_cursor;
+    where c.user_id = v_caller
+      and c.server_version > p_since_cursor;
 
-    -- 2. Read spots
+    -- 3. Read caller's spots
     select coalesce(jsonb_agg(to_jsonb(s)), '[]'::jsonb), coalesce(max(s.server_version), p_since_cursor)
     into v_spots, v_max_spot
     from public.collection_spots s
-    where s.server_version > p_since_cursor;
+    where s.user_id = v_caller
+      and s.server_version > p_since_cursor;
 
-    -- 3. Read redemptions
+    -- 4. Read caller's redemptions
     select coalesce(jsonb_agg(to_jsonb(r)), '[]'::jsonb), coalesce(max(r.server_version), p_since_cursor)
     into v_redemptions, v_max_redemption
     from public.redemption_entries r
-    where r.server_version > p_since_cursor;
+    where r.user_id = v_caller
+      and r.server_version > p_since_cursor;
 
-    -- 4. Read goals
+    -- 5. Read caller's goals
     select coalesce(jsonb_agg(to_jsonb(g)), '[]'::jsonb), coalesce(max(g.server_version), p_since_cursor)
     into v_goals, v_max_goal
     from public.goals g
-    where g.server_version > p_since_cursor;
+    where g.user_id = v_caller
+      and g.server_version > p_since_cursor;
 
-    -- 5. Read profiles
+    -- 6. Read caller's profile
     select coalesce(jsonb_agg(to_jsonb(p)), '[]'::jsonb), coalesce(max(p.server_version), p_since_cursor)
     into v_profiles, v_max_profile
     from public.user_profiles p
-    where p.server_version > p_since_cursor;
+    where p.user_id = v_caller
+      and p.server_version > p_since_cursor;
 
-    -- Compute atomic new cursor strictly from max version of records returned in this snapshot
+    -- Compute atomic new cursor strictly from max version of caller records returned in snapshot
     v_new_cursor := greatest(
         p_since_cursor,
         v_max_collection,
@@ -262,7 +398,8 @@ begin
         'has_more', false
     );
 end;
-$$ language plpgsql security definer set search_path = public;
+$$ language plpgsql security invoker set search_path = public;
 
--- Grant execution to all roles
-grant execute on function public.pull_sync_changes(bigint) to anon, authenticated, service_role;
+-- Restrict Execution to Authenticated Callers (Revoke from public & anon)
+revoke execute on function public.pull_sync_changes(bigint) from public, anon;
+grant execute on function public.pull_sync_changes(bigint) to authenticated, service_role;

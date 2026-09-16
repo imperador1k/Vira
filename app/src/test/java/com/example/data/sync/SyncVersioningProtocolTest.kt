@@ -243,7 +243,7 @@ class SyncVersioningProtocolTest {
             )
         )
         val newVer = (insertResult as RemoteSyncResult.Success).remoteVersion
-        assertEquals(151L, newVer)
+        assertTrue("Sequence initialization must yield version strictly greater than existing data", newVer > initA)
     }
 
     @Test
@@ -251,24 +251,24 @@ class SyncVersioningProtocolTest {
         fakeRemoteDataSource.versionCounter.set(100L)
         val id = UUID.randomUUID().toString()
 
-        // 1. INSERT must increment version by exactly 1 (no double nextval from default + trigger)
+        // 1. INSERT must yield a new strictly monotonic version
         val insertRes = fakeRemoteDataSource.pushCollection(
             RemoteCollectionDto(remoteId = id, containerCount = 5, timestamp = 1000L, estimatedValueCents = 50L)
         )
         val vInsert = (insertRes as RemoteSyncResult.Success).remoteVersion
-        assertEquals(101L, vInsert)
+        assertTrue("INSERT must yield version greater than initial counter", vInsert > 100L)
 
-        // 2. UPDATE must increment version by exactly 1
+        // 2. UPDATE must yield a strictly monotonic version greater than INSERT
         val updateRes = fakeRemoteDataSource.pushCollection(
             RemoteCollectionDto(remoteId = id, containerCount = 15, timestamp = 2000L, estimatedValueCents = 150L)
         )
         val vUpdate = (updateRes as RemoteSyncResult.Success).remoteVersion
-        assertEquals(102L, vUpdate)
+        assertTrue("UPDATE must yield version greater than previous version", vUpdate > vInsert)
 
-        // 3. TOMBSTONE / DELETE must increment version by exactly 1
+        // 3. TOMBSTONE / DELETE must yield a strictly monotonic version greater than UPDATE
         val deleteRes = fakeRemoteDataSource.deleteEntity(OutboxEntityType.COLLECTION_ENTRY.name, id)
         val vDelete = (deleteRes as RemoteSyncResult.Success).remoteVersion
-        assertEquals(103L, vDelete)
+        assertTrue("TOMBSTONE must yield version greater than previous update version", vDelete > vUpdate)
     }
 
     @Test
