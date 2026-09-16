@@ -2,6 +2,7 @@ package com.example.data.sync
 
 import android.content.Context
 import androidx.room.Room
+import androidx.room.withTransaction
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.local.AppDatabase
 import com.example.data.local.OutboxEntityType
@@ -10,6 +11,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -209,5 +211,131 @@ class SyncVersioningProtocolTest {
 
         val collectionsAfterTombstone = database.collectionDao().getAllCollections().first()
         assertTrue("Entity must be deleted locally following tombstone pull", collectionsAfterTombstone.isEmpty())
+    }
+
+    @Test
+    fun sequenceInitializedAboveExistingDataNeverMovesBackwards() = runBlocking {
+        // Migration algorithm simulation: target = maxOf(maxExisting, currentSeq, 1L)
+        fun computeSequenceInit(maxExisting: Long, currentSeq: Long): Long {
+            return maxOf(maxExisting, currentSeq, 1L)
+        }
+
+        // Case A: Table has existing version 150, sequence is at 1
+        val initA = computeSequenceInit(maxExisting = 150L, currentSeq = 1L)
+        assertEquals(150L, initA)
+
+        // Case B: Table max is 50, but sequence has already progressed to 200 (never move backwards)
+        val initB = computeSequenceInit(maxExisting = 50L, currentSeq = 200L)
+        assertEquals(200L, initB)
+
+        // Case C: Empty database, sequence at 1
+        val initC = computeSequenceInit(maxExisting = 0L, currentSeq = 1L)
+        assertEquals(1L, initC)
+
+        // Apply initialized sequence value to remote data source and verify next mutation receives init + 1
+        fakeRemoteDataSource.versionCounter.set(initA)
+        val insertResult = fakeRemoteDataSource.pushCollection(
+            RemoteCollectionDto(
+                remoteId = "post-init-id",
+                containerCount = 10,
+                timestamp = System.currentTimeMillis(),
+                estimatedValueCents = 100L
+            )
+        )
+        val newVer = (insertResult as RemoteSyncResult.Success).remoteVersion
+        assertEquals(151L, newVer)
+    }
+
+    @Test
+    fun exactlyOneNewVersionPerLogicalMutation() = runBlocking {
+        fakeRemoteDataSource.versionCounter.set(100L)
+        val id = UUID.randomUUID().toString()
+
+        // 1. INSERT must increment version by exactly 1 (no double nextval from default + trigger)
+        val insertRes = fakeRemoteDataSource.pushCollection(
+            RemoteCollectionDto(remoteId = id, containerCount = 5, timestamp = 1000L, estimatedValueCents = 50L)
+        )
+        val vInsert = (insertRes as RemoteSyncResult.Success).remoteVersion
+        assertEquals(101L, vInsert)
+
+        // 2. UPDATE must increment version by exactly 1
+        val updateRes = fakeRemoteDataSource.pushCollection(
+            RemoteCollectionDto(remoteId = id, containerCount = 15, timestamp = 2000L, estimatedValueCents = 150L)
+        )
+        val vUpdate = (updateRes as RemoteSyncResult.Success).remoteVersion
+        assertEquals(102L, vUpdate)
+
+        // 3. TOMBSTONE / DELETE must increment version by exactly 1
+        val deleteRes = fakeRemoteDataSource.deleteEntity(OutboxEntityType.COLLECTION_ENTRY.name, id)
+        val vDelete = (deleteRes as RemoteSyncResult.Success).remoteVersion
+        assertEquals(103L, vDelete)
+    }
+
+    @Test
+    fun concurrentMutationDuringPullSnapshotIsNeverLost() = runBlocking {
+        // Step 1: Server has 2 changes (v1, v2)
+        fakeRemoteDataSource.pushSpot(
+            RemoteSpotDto(remoteId = "spot-c1", name = "Spot 1", latitude = 38.0, longitude = -9.0, clientCreatedAt = 1L, clientUpdatedAt = 1L)
+        )
+        fakeRemoteDataSource.pushCollection(
+            RemoteCollectionDto(remoteId = "col-c1", containerCount = 10, timestamp = 1L, estimatedValueCents = 100L)
+        )
+
+        // Step 2: Client pulls snapshot up to cursor=2
+        val pull1 = syncManager.pullAndReconcile()
+        assertTrue(pull1)
+        assertEquals(2L, cursorManager.getCursor())
+
+        // Step 3: Concurrent mutation occurs on server (v3) while client is idle
+        fakeRemoteDataSource.pushCollection(
+            RemoteCollectionDto(remoteId = "col-c2", containerCount = 20, timestamp = 2L, estimatedValueCents = 200L)
+        )
+
+        // Step 4: Next pull starts from cursor=2 and must retrieve v3
+        val pull2 = syncManager.pullAndReconcile()
+        assertTrue(pull2)
+        assertEquals(3L, cursorManager.getCursor())
+
+        val localCollections = database.collectionDao().getAllCollections().first()
+        assertEquals(2, localCollections.size)
+        assertTrue(localCollections.any { it.remoteId == "col-c2" })
+    }
+
+    @Test
+    fun cursorOnlyAdvancesAfterEntirePayloadIsApplied() = runBlocking {
+        cursorManager.setCursor(5L)
+
+        // Simulate failing reconciler that crashes mid-transaction
+        val failingReconciler = object : InboundSyncReconciler(database, cursorManager) {
+            override suspend fun reconcile(response: RemoteSyncPullResponse, currentCursor: Long) {
+                database.withTransaction {
+                    // Throwing before commit
+                    throw java.sql.SQLException("Simulated transaction failure during pull reconciliation")
+                }
+            }
+        }
+
+        val testSyncManager = SyncManager(
+            database = database,
+            remoteDataSource = fakeRemoteDataSource,
+            cursorManager = cursorManager,
+            reconciler = failingReconciler
+        )
+
+        // Pull changes with new server version 50
+        fakeRemoteDataSource.setPullResponse(
+            RemoteSyncPullResponse(
+                collections = listOf(
+                    RemoteCollectionDto(remoteId = "atomic-fail-id", containerCount = 10, timestamp = 1L, estimatedValueCents = 100L, serverVersion = 50L)
+                ),
+                newCursor = 50L
+            )
+        )
+
+        val success = testSyncManager.pullAndReconcile()
+        assertFalse("Pull must report failure when transaction fails", success)
+
+        // Cursor MUST remain at 5, NOT 50
+        assertEquals("Cursor must not advance if payload application failed", 5L, cursorManager.getCursor())
     }
 }

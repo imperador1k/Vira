@@ -86,12 +86,18 @@ data class RemoteFavoriteDto(
     @SerialName("client_created_at") val clientCreatedAt: Long
 )
 
+@Serializable
 data class RemoteSyncPullResponse(
-    val collections: List<RemoteCollectionDto> = emptyList(),
-    val spots: List<RemoteSpotDto> = emptyList(),
-    val redemptions: List<RemoteRedemptionDto> = emptyList(),
-    val goals: List<RemoteGoalDto> = emptyList(),
-    val profile: RemoteProfileDto? = null,
-    val newCursor: Long = 0L,
-    val hasMore: Boolean = false
+    @SerialName("collections") val collections: List<RemoteCollectionDto> = emptyList(),
+    @SerialName("spots") val spots: List<RemoteSpotDto> = emptyList(),
+    @SerialName("redemptions") val redemptions: List<RemoteRedemptionDto> = emptyList(),
+    @SerialName("goals") val goals: List<RemoteGoalDto> = emptyList(),
+    @SerialName("profile") val profile: RemoteProfileDto? = null,
+    @SerialName("new_cursor") val newCursor: Long = 0L,
+    @SerialName("has_more") val hasMore: Boolean = false
+)
+
+@Serializable
+data class PullSyncRpcParams(
+    @SerialName("p_since_cursor") val sinceCursor: Long
 )

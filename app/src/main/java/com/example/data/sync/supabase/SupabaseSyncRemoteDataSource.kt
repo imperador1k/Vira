@@ -1,6 +1,7 @@
 package com.example.data.sync.supabase
 
 import com.example.data.local.OutboxEntityType
+import com.example.data.sync.PullSyncRpcParams
 import com.example.data.sync.RemoteCollectionDto
 import com.example.data.sync.RemoteFavoriteDto
 import com.example.data.sync.RemoteGoalDto
@@ -12,7 +13,9 @@ import com.example.data.sync.RemoteSyncResult
 import com.example.data.sync.SyncRemoteDataSource
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.from
-import kotlin.math.max
+import io.github.jan.supabase.postgrest.postgrest
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 /**
  * Production implementation of SyncRemoteDataSource backed by Supabase PostgREST.
@@ -124,43 +127,13 @@ class SupabaseSyncRemoteDataSource(
 
     override suspend fun pullChanges(sinceCursor: Long): RemoteSyncPullResponse {
         return try {
-            val collections = client.from("collection_entries").select {
-                filter { gt("server_version", sinceCursor) }
-            }.decodeList<RemoteCollectionDto>()
-
-            val spots = client.from("collection_spots").select {
-                filter { gt("server_version", sinceCursor) }
-            }.decodeList<RemoteSpotDto>()
-
-            val redemptions = client.from("redemption_entries").select {
-                filter { gt("server_version", sinceCursor) }
-            }.decodeList<RemoteRedemptionDto>()
-
-            val goals = client.from("goals").select {
-                filter { gt("server_version", sinceCursor) }
-            }.decodeList<RemoteGoalDto>()
-
-            val profiles = client.from("user_profiles").select {
-                filter { gt("server_version", sinceCursor) }
-            }.decodeList<RemoteProfileDto>()
-
-            val maxCollectionVer = collections.mapNotNull { it.serverVersion }.maxOrNull() ?: sinceCursor
-            val maxSpotVer = spots.mapNotNull { it.serverVersion }.maxOrNull() ?: sinceCursor
-            val maxRedemptionVer = redemptions.mapNotNull { it.serverVersion }.maxOrNull() ?: sinceCursor
-            val maxGoalVer = goals.mapNotNull { it.serverVersion }.maxOrNull() ?: sinceCursor
-            val maxProfileVer = profiles.mapNotNull { it.serverVersion }.maxOrNull() ?: sinceCursor
-
-            val nextCursor = maxOf(sinceCursor, maxCollectionVer, maxSpotVer, maxRedemptionVer, maxGoalVer, maxProfileVer)
-
-            RemoteSyncPullResponse(
-                collections = collections,
-                spots = spots,
-                redemptions = redemptions,
-                goals = goals,
-                profile = profiles.firstOrNull(),
-                newCursor = nextCursor,
-                hasMore = false
-            )
+            val params = buildJsonObject {
+                put("p_since_cursor", sinceCursor)
+            }
+            client.postgrest.rpc(
+                function = "pull_sync_changes",
+                parameters = params
+            ).decodeSingle<RemoteSyncPullResponse>()
         } catch (e: Exception) {
             RemoteSyncPullResponse(newCursor = sinceCursor, hasMore = false)
         }
