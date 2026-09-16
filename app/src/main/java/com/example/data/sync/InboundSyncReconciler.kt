@@ -48,11 +48,11 @@ open class InboundSyncReconciler(
         if (remoteList.isEmpty()) return
         val localList = database.collectionDao().getAllCollections().firstOrNull() ?: emptyList()
         for (remote in remoteList) {
-            if (isPendingOutbox(remote.remoteId)) {
+            val local = localList.find { it.remoteId == remote.remoteId }
+            if (isPendingOutbox(remote.remoteId) || isLocalPending(local?.syncState)) {
                 android.util.Log.d(TAG, "Reconcile skip [Outbox Protection]: Collection remoteId=${remote.remoteId}")
                 continue
             }
-            val local = localList.find { it.remoteId == remote.remoteId }
             val serverMillis = parseIsoToMillis(remote.serverUpdatedAt)
             val version = remote.serverVersion ?: 1L
 
@@ -93,11 +93,11 @@ open class InboundSyncReconciler(
         if (remoteList.isEmpty()) return
         val localList = database.spotDao().getAllSpots().firstOrNull() ?: emptyList()
         for (remote in remoteList) {
-            if (isPendingOutbox(remote.remoteId)) {
+            val local = localList.find { it.remoteId == remote.remoteId }
+            if (isPendingOutbox(remote.remoteId) || isLocalPending(local?.syncState)) {
                 android.util.Log.d(TAG, "Reconcile skip [Outbox Protection]: Spot remoteId=${remote.remoteId}")
                 continue
             }
-            val local = localList.find { it.remoteId == remote.remoteId }
             val serverMillis = parseIsoToMillis(remote.serverUpdatedAt)
             val version = remote.serverVersion ?: 1L
 
@@ -135,11 +135,11 @@ open class InboundSyncReconciler(
         if (remoteList.isEmpty()) return
         val localList = database.redemptionDao().getAllRedemptions().firstOrNull() ?: emptyList()
         for (remote in remoteList) {
-            if (isPendingOutbox(remote.remoteId)) {
+            val local = localList.find { it.remoteId == remote.remoteId }
+            if (isPendingOutbox(remote.remoteId) || isLocalPending(local?.syncState)) {
                 android.util.Log.d(TAG, "Reconcile skip [Outbox Protection]: Redemption remoteId=${remote.remoteId}")
                 continue
             }
-            val local = localList.find { it.remoteId == remote.remoteId }
             val serverMillis = parseIsoToMillis(remote.serverUpdatedAt)
             val version = remote.serverVersion ?: 1L
 
@@ -181,11 +181,11 @@ open class InboundSyncReconciler(
         if (remoteList.isEmpty()) return
         val localList = database.goalDao().getAllGoals().firstOrNull() ?: emptyList()
         for (remote in remoteList) {
-            if (isPendingOutbox(remote.remoteId)) {
+            val local = localList.find { it.remoteId == remote.remoteId }
+            if (isPendingOutbox(remote.remoteId) || isLocalPending(local?.syncState)) {
                 android.util.Log.d(TAG, "Reconcile skip [Outbox Protection]: Goal remoteId=${remote.remoteId}")
                 continue
             }
-            val local = localList.find { it.remoteId == remote.remoteId }
             val serverMillis = parseIsoToMillis(remote.serverUpdatedAt)
             val version = remote.serverVersion ?: 1L
 
@@ -220,11 +220,11 @@ open class InboundSyncReconciler(
     }
 
     private suspend fun reconcileProfile(remote: RemoteProfileDto) {
-        if (isPendingOutbox(remote.remoteId)) {
+        val local = database.userDao().getUserProfile().firstOrNull()
+        if (isPendingOutbox(remote.remoteId) || isLocalPending(local?.syncState)) {
             android.util.Log.d(TAG, "Reconcile skip [Outbox Protection]: UserProfile remoteId=${remote.remoteId}")
             return
         }
-        val local = database.userDao().getUserProfile().firstOrNull()
         val serverMillis = parseIsoToMillis(remote.serverUpdatedAt)
         val version = remote.serverVersion ?: 1L
 
@@ -252,6 +252,10 @@ open class InboundSyncReconciler(
             )
             database.userDao().insertUserProfile(entity)
         }
+    }
+
+    private fun isLocalPending(syncState: String?): Boolean {
+        return syncState == SyncState.PENDING_UPLOAD.name || syncState == SyncState.PENDING_DELETE.name
     }
 
     private suspend fun isPendingOutbox(remoteId: String): Boolean {
