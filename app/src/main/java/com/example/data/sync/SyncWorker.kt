@@ -22,6 +22,11 @@ class SyncWorker(
     override suspend fun doWork(): Result {
         android.util.Log.i(TAG, "SyncWorker doWork started (attempt=$runAttemptCount)")
         val app = applicationContext as? ViraApp ?: return Result.failure()
+        val authRepo = app.container.authRepository
+        if (authRepo.getCurrentUserId() == null) {
+            android.util.Log.d(TAG, "SyncWorker skipped: user is in local-only mode")
+            return Result.success()
+        }
         val syncManager = app.container.syncManager
 
         return try {

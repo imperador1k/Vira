@@ -7,15 +7,90 @@ import com.example.data.local.SyncOutboxEntity
 import com.example.data.local.SyncState
 import kotlinx.coroutines.flow.firstOrNull
 
+import com.example.data.auth.AuthRepository
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
 class SyncManager(
     private val database: AppDatabase,
     private val remoteDataSource: SyncRemoteDataSource,
     private val cursorManager: SyncCursorManager? = null,
-    private val reconciler: InboundSyncReconciler = InboundSyncReconciler(database, cursorManager)
+    private val reconciler: InboundSyncReconciler = InboundSyncReconciler(database, cursorManager),
+    private val authRepository: AuthRepository? = null
 ) {
 
     companion object {
         private const val TAG = "ViraSync"
+    }
+
+    private val _lastSyncTime = MutableStateFlow<Long?>(null)
+    val lastSyncTime: StateFlow<Long?> = _lastSyncTime.asStateFlow()
+
+    /**
+     * Links existing offline/local-created entities to the newly authenticated account.
+     * Enqueues un-synced entities with remoteVersion == 0 into the sync outbox
+     * without changing their stable remoteId or duplicating records.
+     */
+    suspend fun linkExistingLocalData() {
+        val collections = database.collectionDao().getAllCollections().firstOrNull() ?: emptyList()
+        for (c in collections) {
+            val remoteId = c.remoteId ?: continue
+            if (c.remoteVersion == 0L) {
+                database.syncOutboxDao().enqueueCoalesced(
+                    entityType = OutboxEntityType.COLLECTION_ENTRY.name,
+                    entityRemoteId = remoteId,
+                    operationType = OutboxOperationType.UPSERT.name,
+                    isLocallyCreatedOnly = true
+                )
+            }
+        }
+        val spots = database.spotDao().getAllSpots().firstOrNull() ?: emptyList()
+        for (s in spots) {
+            val remoteId = s.remoteId ?: continue
+            if (s.remoteVersion == 0L) {
+                database.syncOutboxDao().enqueueCoalesced(
+                    entityType = OutboxEntityType.COLLECTION_SPOT.name,
+                    entityRemoteId = remoteId,
+                    operationType = OutboxOperationType.UPSERT.name,
+                    isLocallyCreatedOnly = true
+                )
+            }
+        }
+        val redemptions = database.redemptionDao().getAllRedemptions().firstOrNull() ?: emptyList()
+        for (r in redemptions) {
+            val remoteId = r.remoteId ?: continue
+            if (r.remoteVersion == 0L) {
+                database.syncOutboxDao().enqueueCoalesced(
+                    entityType = OutboxEntityType.REDEMPTION_ENTRY.name,
+                    entityRemoteId = remoteId,
+                    operationType = OutboxOperationType.UPSERT.name,
+                    isLocallyCreatedOnly = true
+                )
+            }
+        }
+        val goals = database.goalDao().getAllGoals().firstOrNull() ?: emptyList()
+        for (g in goals) {
+            val remoteId = g.remoteId ?: continue
+            if (g.remoteVersion == 0L) {
+                database.syncOutboxDao().enqueueCoalesced(
+                    entityType = OutboxEntityType.GOAL.name,
+                    entityRemoteId = remoteId,
+                    operationType = OutboxOperationType.UPSERT.name,
+                    isLocallyCreatedOnly = true
+                )
+            }
+        }
+        val profile = database.userDao().getUserProfile().firstOrNull()
+        if (profile != null && profile.remoteVersion == 0L) {
+            val remoteId = profile.remoteId ?: java.util.UUID.randomUUID().toString()
+            database.syncOutboxDao().enqueueCoalesced(
+                entityType = OutboxEntityType.USER_PROFILE.name,
+                entityRemoteId = remoteId,
+                operationType = OutboxOperationType.UPSERT.name,
+                isLocallyCreatedOnly = true
+            )
+        }
     }
 
     /**
@@ -51,7 +126,14 @@ class SyncManager(
      * Executes a full bidirectional sync: pushes local pending changes, then pulls remote updates.
      */
     suspend fun syncAll(): Boolean {
+        if (authRepository != null && authRepository.getCurrentUserId() == null) {
+            android.util.Log.d(TAG, "syncAll: skipped, app is in local-only mode (unauthenticated)")
+            return true
+        }
+
         android.util.Log.i(TAG, "Starting syncAll cycle...")
+        linkExistingLocalData()
+
         var allPushed = true
         while (true) {
             val pending = database.syncOutboxDao().getPendingBatch(50)
@@ -63,6 +145,9 @@ class SyncManager(
             }
         }
         val pullSuccess = pullAndReconcile()
+        if (allPushed && pullSuccess) {
+            _lastSyncTime.value = System.currentTimeMillis()
+        }
         android.util.Log.i(TAG, "syncAll finished. allPushed=$allPushed, pullSuccess=$pullSuccess")
         return allPushed && pullSuccess
     }

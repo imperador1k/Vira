@@ -2,6 +2,9 @@ package com.example
 
 import android.content.Context
 import androidx.room.Room
+import com.example.data.auth.AuthRepository
+import com.example.data.auth.AuthState
+import com.example.data.auth.SupabaseAuthRepository
 import com.example.data.local.AppDatabase
 import com.example.data.sync.FakeSyncRemoteDataSource
 import com.example.data.sync.SyncCursorManager
@@ -19,6 +22,8 @@ import com.example.repository.RedemptionRepository
 import com.example.repository.ReturnPointRepository
 import com.example.repository.SpotRepository
 import com.example.repository.UserRepository
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 class AppContainer(private val context: Context) {
     val database: AppDatabase by lazy {
@@ -43,6 +48,22 @@ class AppContainer(private val context: Context) {
         .build()
     }
 
+    val authRepository: AuthRepository by lazy {
+        SupabaseClientProvider.getClient()?.let { client ->
+            SupabaseAuthRepository(client)
+        } ?: object : AuthRepository {
+            private val _state = MutableStateFlow<AuthState>(AuthState.LocalOnly)
+            override val authState: StateFlow<AuthState> = _state
+            override suspend fun signIn(email: String, password: String): Result<Unit> =
+                Result.failure(IllegalStateException("Supabase not configured"))
+            override suspend fun signUp(email: String, password: String): Result<Unit> =
+                Result.failure(IllegalStateException("Supabase not configured"))
+            override suspend fun signOut(): Result<Unit> = Result.success(Unit)
+            override fun getCurrentUserId(): String? = null
+            override fun getCurrentEmail(): String? = null
+        }
+    }
+
     val syncRemoteDataSource: SyncRemoteDataSource by lazy {
         SupabaseClientProvider.getClient()?.let { client ->
             SupabaseSyncRemoteDataSource(client)
@@ -54,7 +75,12 @@ class AppContainer(private val context: Context) {
     }
 
     val syncManager: SyncManager by lazy {
-        SyncManager(database, syncRemoteDataSource, syncCursorManager)
+        SyncManager(
+            database = database,
+            remoteDataSource = syncRemoteDataSource,
+            cursorManager = syncCursorManager,
+            authRepository = authRepository
+        )
     }
 
     val collectionRepository: CollectionRepository by lazy {
