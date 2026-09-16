@@ -22,7 +22,7 @@ class SyncWorker(
         val syncManager = app.container.syncManager
 
         return try {
-            val allSuccess = syncManager.processOutboxBatch()
+            val allSuccess = syncManager.syncAll()
             if (allSuccess) {
                 Result.success()
             } else {

@@ -4,9 +4,12 @@ import android.content.Context
 import androidx.room.Room
 import com.example.data.local.AppDatabase
 import com.example.data.sync.FakeSyncRemoteDataSource
+import com.example.data.sync.SyncCursorManager
 import com.example.data.sync.SyncManager
 import com.example.data.sync.SyncRemoteDataSource
 import com.example.data.sync.SyncWorker
+import com.example.data.sync.supabase.SupabaseClientProvider
+import com.example.data.sync.supabase.SupabaseSyncRemoteDataSource
 import com.example.domain.BalanceService
 import com.example.repository.AndroidLocationRepository
 import com.example.repository.CollectionRepository
@@ -37,13 +40,17 @@ class AppContainer(private val context: Context) {
     }
 
     val syncRemoteDataSource: SyncRemoteDataSource by lazy {
-        // In local/dev/account-less mode, use the in-memory fake data source.
-        // Future cloud integration can swap this with SupabaseSyncRemoteDataSource without altering repositories.
-        FakeSyncRemoteDataSource()
+        SupabaseClientProvider.getClient()?.let { client ->
+            SupabaseSyncRemoteDataSource(client)
+        } ?: FakeSyncRemoteDataSource()
+    }
+
+    val syncCursorManager: SyncCursorManager by lazy {
+        SyncCursorManager(context)
     }
 
     val syncManager: SyncManager by lazy {
-        SyncManager(database, syncRemoteDataSource)
+        SyncManager(database, syncRemoteDataSource, syncCursorManager)
     }
 
     val collectionRepository: CollectionRepository by lazy {

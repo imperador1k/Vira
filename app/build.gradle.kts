@@ -1,4 +1,5 @@
 import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
+import java.util.Properties
 
 plugins {
   alias(libs.plugins.android.application)
@@ -9,6 +10,21 @@ plugins {
   alias(libs.plugins.secrets)
   alias(libs.plugins.google.services)
 }
+
+val localProperties = Properties().apply {
+  val localPropertiesFile = rootProject.file("local.properties")
+  if (localPropertiesFile.exists()) {
+    localPropertiesFile.inputStream().use { load(it) }
+  }
+}
+
+val supabaseUrl: String = (localProperties.getProperty("SUPABASE_URL")
+  ?: System.getenv("SUPABASE_URL")
+  ?: "https://uqssoluafqaphfvsghnq.supabase.co")
+
+val supabaseKey: String = (localProperties.getProperty("SUPABASE_KEY")
+  ?: System.getenv("SUPABASE_KEY")
+  ?: "")
 
 android {
   namespace = "com.example"
@@ -22,6 +38,9 @@ android {
     versionName = "1.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+    buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
+    buildConfigField("String", "SUPABASE_KEY", "\"$supabaseKey\"")
   }
 
   signingConfigs {
@@ -125,6 +144,13 @@ dependencies {
   runtimeOnly("org.maplibre.compose:maplibre-compose-runtime-opengl-android:0.16.0")
   implementation(libs.retrofit)
   implementation(libs.androidx.work.runtime.ktx)
+
+  // Supabase & Ktor
+  implementation(platform(libs.supabase.bom))
+  implementation(libs.supabase.postgrest)
+  implementation(libs.supabase.auth)
+  implementation(libs.ktor.client.okhttp)
+
   testImplementation(libs.androidx.work.testing)
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)

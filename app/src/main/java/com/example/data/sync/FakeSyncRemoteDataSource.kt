@@ -68,7 +68,13 @@ class FakeSyncRemoteDataSource(
         return RemoteSyncResult.Success(System.currentTimeMillis(), versionCounter.incrementAndGet())
     }
 
+    var simulatedPullResponse: RemoteSyncPullResponse = RemoteSyncPullResponse()
+
+    fun setPullResponse(response: RemoteSyncPullResponse) {
+        this.simulatedPullResponse = response
+    }
+
     override suspend fun pullChanges(sinceCursor: Long): RemoteSyncPullResponse {
-        return RemoteSyncPullResponse()
+        return simulatedPullResponse
     }
 }

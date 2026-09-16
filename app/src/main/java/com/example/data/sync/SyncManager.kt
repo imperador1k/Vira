@@ -9,8 +9,42 @@ import kotlinx.coroutines.flow.firstOrNull
 
 class SyncManager(
     private val database: AppDatabase,
-    private val remoteDataSource: SyncRemoteDataSource
+    private val remoteDataSource: SyncRemoteDataSource,
+    private val cursorManager: SyncCursorManager? = null,
+    private val reconciler: InboundSyncReconciler = InboundSyncReconciler(database)
 ) {
+
+    /**
+     * Pull remote changes from server since the stored cursor and reconcile locally.
+     * Guaranteed atomic transaction: either all changes and cursor advance succeed, or none.
+     */
+    suspend fun pullAndReconcile(): Boolean {
+        val cursor = cursorManager?.getCursor() ?: 0L
+        val pullResponse = try {
+            remoteDataSource.pullChanges(cursor)
+        } catch (e: Exception) {
+            return false
+        }
+
+        return try {
+            reconciler.reconcile(pullResponse)
+            if (pullResponse.newCursor > cursor) {
+                cursorManager?.setCursor(pullResponse.newCursor)
+            }
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Executes a full bidirectional sync: pushes local pending changes, then pulls remote updates.
+     */
+    suspend fun syncAll(): Boolean {
+        val pushSuccess = processOutboxBatch()
+        val pullSuccess = pullAndReconcile()
+        return pushSuccess && pullSuccess
+    }
 
     /**
      * Process pending outbox entries in chronological order.

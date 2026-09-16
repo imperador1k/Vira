@@ -1,69 +1,97 @@
 package com.example.data.sync
 
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+
 /**
- * Provider-independent remote DTOs.
+ * Provider-independent remote DTOs mapped to backend database tables.
  * Separates Room schema from external network schema.
  * Room Entity <-> Domain Model <-> Remote DTO.
  */
 
+@Serializable
 data class RemoteCollectionDto(
-    val remoteId: String,
-    val containerCount: Int,
-    val timestamp: Long,
-    val estimatedValueCents: Long,
-    val spotRemoteId: String? = null,
-    val note: String? = null,
-    val latitude: Double? = null,
-    val longitude: Double? = null,
-    val clientUpdatedAt: Long = timestamp
+    @SerialName("id") val remoteId: String,
+    @SerialName("container_count") val containerCount: Int,
+    @SerialName("timestamp") val timestamp: Long,
+    @SerialName("estimated_value_cents") val estimatedValueCents: Long,
+    @SerialName("spot_id") val spotRemoteId: String? = null,
+    @SerialName("note") val note: String? = null,
+    @SerialName("latitude") val latitude: Double? = null,
+    @SerialName("longitude") val longitude: Double? = null,
+    @SerialName("client_updated_at") val clientUpdatedAt: Long = timestamp,
+    @SerialName("server_updated_at") val serverUpdatedAt: String? = null,
+    @SerialName("server_version") val serverVersion: Long? = null,
+    @SerialName("deleted_at") val deletedAt: String? = null
 )
 
+@Serializable
 data class RemoteRedemptionDto(
-    val remoteId: String,
-    val presentedContainers: Int,
-    val acceptedContainers: Int,
-    val rejectedContainers: Int,
-    val actualRecoveredCents: Long,
-    val timestamp: Long,
-    val returnPointRemoteId: String? = null,
-    val note: String? = null,
-    val clientUpdatedAt: Long = timestamp
+    @SerialName("id") val remoteId: String,
+    @SerialName("presented_containers") val presentedContainers: Int,
+    @SerialName("accepted_containers") val acceptedContainers: Int,
+    @SerialName("rejected_containers") val rejectedContainers: Int = 0,
+    @SerialName("actual_recovered_cents") val actualRecoveredCents: Long,
+    @SerialName("timestamp") val timestamp: Long,
+    @SerialName("return_point_id") val returnPointRemoteId: String? = null,
+    @SerialName("note") val note: String? = null,
+    @SerialName("client_updated_at") val clientUpdatedAt: Long = timestamp,
+    @SerialName("server_updated_at") val serverUpdatedAt: String? = null,
+    @SerialName("server_version") val serverVersion: Long? = null,
+    @SerialName("deleted_at") val deletedAt: String? = null
 )
 
+@Serializable
 data class RemoteSpotDto(
-    val remoteId: String,
-    val name: String,
-    val latitude: Double,
-    val longitude: Double,
-    val address: String? = null,
-    val clientCreatedAt: Long,
-    val clientUpdatedAt: Long
+    @SerialName("id") val remoteId: String,
+    @SerialName("name") val name: String,
+    @SerialName("latitude") val latitude: Double,
+    @SerialName("longitude") val longitude: Double,
+    @SerialName("address") val address: String? = null,
+    @SerialName("client_created_at") val clientCreatedAt: Long,
+    @SerialName("client_updated_at") val clientUpdatedAt: Long,
+    @SerialName("server_updated_at") val serverUpdatedAt: String? = null,
+    @SerialName("server_version") val serverVersion: Long? = null,
+    @SerialName("deleted_at") val deletedAt: String? = null
 )
 
+@Serializable
 data class RemoteGoalDto(
-    val remoteId: String,
-    val type: String,
-    val targetValue: Int,
-    val period: String,
-    val isActive: Boolean,
-    val clientUpdatedAt: Long
+    @SerialName("id") val remoteId: String,
+    @SerialName("type") val type: String,
+    @SerialName("target_value") val targetValue: Int,
+    @SerialName("period") val period: String,
+    @SerialName("is_active") val isActive: Boolean,
+    @SerialName("client_updated_at") val clientUpdatedAt: Long,
+    @SerialName("server_updated_at") val serverUpdatedAt: String? = null,
+    @SerialName("server_version") val serverVersion: Long? = null,
+    @SerialName("deleted_at") val deletedAt: String? = null
 )
 
+@Serializable
 data class RemoteProfileDto(
-    val remoteId: String,
-    val name: String,
-    val themePreference: String,
-    val clientUpdatedAt: Long
+    @SerialName("id") val remoteId: String,
+    @SerialName("name") val name: String,
+    @SerialName("theme_preference") val themePreference: String,
+    @SerialName("client_updated_at") val clientUpdatedAt: Long,
+    @SerialName("server_updated_at") val serverUpdatedAt: String? = null,
+    @SerialName("server_version") val serverVersion: Long? = null,
+    @SerialName("deleted_at") val deletedAt: String? = null
 )
 
+@Serializable
 data class RemoteFavoriteDto(
-    val remoteId: String,
-    val returnPointId: Int,
-    val clientCreatedAt: Long
+    @SerialName("id") val remoteId: String,
+    @SerialName("return_point_id") val returnPointId: Int,
+    @SerialName("client_created_at") val clientCreatedAt: Long
 )
 
 data class RemoteSyncPullResponse(
-    val items: List<Any> = emptyList(),
+    val collections: List<RemoteCollectionDto> = emptyList(),
+    val spots: List<RemoteSpotDto> = emptyList(),
+    val redemptions: List<RemoteRedemptionDto> = emptyList(),
+    val goals: List<RemoteGoalDto> = emptyList(),
+    val profile: RemoteProfileDto? = null,
     val newCursor: Long = 0L,
     val hasMore: Boolean = false
 )
