@@ -56,6 +56,13 @@ import com.example.ui.theme.ViraTypography
 import com.example.util.FormatUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import com.example.data.auth.AuthState
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -70,8 +77,17 @@ fun ProfileScreen() {
         initialValue = ContainerBalance(0, 0, 0, 0L, 0L, 0L)
     )
     val userProfile by appContainer.userRepository.getUserProfile().collectAsStateWithLifecycle(null)
+    val authState by appContainer.authRepository.authState.collectAsStateWithLifecycle(AuthState.LocalOnly)
+    val lastSyncTime by appContainer.syncManager.lastSyncTime.collectAsStateWithLifecycle(null)
 
     var showClearDataDialog by remember { mutableStateOf(false) }
+    var showAuthDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(authState) {
+        if (authState is AuthState.Authenticated) {
+            showAuthDialog = false
+        }
+    }
 
     val memberDateText = remember(userProfile) {
         val timestamp = userProfile?.memberSince ?: System.currentTimeMillis()
@@ -154,6 +170,104 @@ fun ProfileScreen() {
                             modifier = Modifier.weight(1f),
                             valueColor = MaterialTheme.colorScheme.primary
                         )
+                    }
+                }
+                Spacer(modifier = Modifier.height(ViraSpacing.space24))
+            }
+
+            // CLOUD BACKUP & SYNC
+            item {
+                ViraSectionHeader(title = "Cópia de Segurança")
+                Spacer(modifier = Modifier.height(ViraSpacing.space8))
+                ViraSurfaceCard(modifier = Modifier.fillMaxWidth()) {
+                    when (val currentAuth = authState) {
+                        is AuthState.Authenticated -> {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                    Icon(
+                                        imageVector = Icons.Default.CloudDone,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(ViraIconSize.medium)
+                                    )
+                                    Spacer(modifier = Modifier.width(ViraSpacing.space16))
+                                    Column {
+                                        Text(text = "Backup na nuvem ativo", style = ViraTypography.Body)
+                                        Text(
+                                            text = currentAuth.email,
+                                            style = ViraTypography.Caption,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        val syncText = if (lastSyncTime != null) {
+                                            "Última sincronização: ${SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(lastSyncTime!!))}"
+                                        } else {
+                                            "Sincronização pendente"
+                                        }
+                                        Text(
+                                            text = syncText,
+                                            style = ViraTypography.Caption,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                        )
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(ViraSpacing.space12))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                TextButton(
+                                    onClick = { scope.launch(Dispatchers.IO) { appContainer.syncManager.syncAll() } }
+                                ) {
+                                    Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(ViraIconSize.small))
+                                    Spacer(modifier = Modifier.width(ViraSpacing.space4))
+                                    Text("Sincronizar agora")
+                                }
+                                Spacer(modifier = Modifier.width(ViraSpacing.space8))
+                                TextButton(
+                                    onClick = { scope.launch { appContainer.authRepository.signOut() } }
+                                ) {
+                                    Text("Terminar sessão", color = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+                        else -> {
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.Cloud,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(ViraIconSize.medium)
+                                    )
+                                    Spacer(modifier = Modifier.width(ViraSpacing.space16))
+                                    Column {
+                                        Text(
+                                            text = "Os teus dados estão guardados neste dispositivo.",
+                                            style = ViraTypography.Body
+                                        )
+                                        Text(
+                                            text = "Ativa o backup para sincronizar e proteger as tuas recolhas.",
+                                            style = ViraTypography.Caption,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(ViraSpacing.space12))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End
+                                ) {
+                                    TextButton(onClick = { showAuthDialog = true }) {
+                                        Text("Ativar backup na nuvem")
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 Spacer(modifier = Modifier.height(ViraSpacing.space24))
@@ -274,7 +388,102 @@ fun ProfileScreen() {
                 }
             )
         }
+
+        if (showAuthDialog) {
+            AuthDialog(
+                authState = authState,
+                onDismiss = { showAuthDialog = false },
+                onSignIn = { email, pass ->
+                    scope.launch {
+                        appContainer.authRepository.signIn(email, pass)
+                    }
+                },
+                onSignUp = { email, pass ->
+                    scope.launch {
+                        appContainer.authRepository.signUp(email, pass)
+                    }
+                }
+            )
+        }
     }
+}
+
+@Composable
+private fun AuthDialog(
+    authState: AuthState,
+    onDismiss: () -> Unit,
+    onSignIn: (String, String) -> Unit,
+    onSignUp: (String, String) -> Unit
+) {
+    var isSignUp by remember { mutableStateOf(false) }
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(if (isSignUp) "Criar Conta Vira" else "Iniciar Sessão")
+        },
+        text = {
+            Column {
+                if (authState is AuthState.Error) {
+                    Text(
+                        text = authState.message,
+                        color = MaterialTheme.colorScheme.error,
+                        style = ViraTypography.Caption
+                    )
+                    Spacer(modifier = Modifier.height(ViraSpacing.space8))
+                }
+                OutlinedTextField(
+                    value = email,
+                    onValueChange = { email = it },
+                    label = { Text("Email") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(ViraSpacing.space8))
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text("Palavra-passe") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(ViraSpacing.space8))
+                TextButton(
+                    onClick = { isSignUp = !isSignUp },
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    Text(
+                        if (isSignUp) "Já tens conta? Iniciar sessão"
+                        else "Não tens conta? Criar nova conta",
+                        style = ViraTypography.Caption
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    if (isSignUp) onSignUp(email.trim(), password)
+                    else onSignIn(email.trim(), password)
+                },
+                enabled = email.isNotBlank() && password.length >= 6 && authState !is AuthState.Loading
+            ) {
+                Text(
+                    if (authState is AuthState.Loading) "A processar..."
+                    else if (isSignUp) "Criar conta"
+                    else "Entrar"
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancelar")
+            }
+        }
+    )
 }
 
 @Composable
