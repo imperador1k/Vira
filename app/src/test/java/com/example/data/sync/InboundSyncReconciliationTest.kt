@@ -259,4 +259,61 @@ class InboundSyncReconciliationTest {
         assertEquals(SyncState.PENDING_UPLOAD.name, current.syncState)
         assertEquals(0L, cursorManager.getCursor())
     }
+
+    @Test
+    fun multiBatchOutboxDrainingTest() = runBlocking {
+        // Enqueue 110 items across 3 batches (50 + 50 + 10)
+        val totalItems = 110
+        for (i in 1..totalItems) {
+            val entry = CollectionEntryEntity(
+                remoteId = "batch-item-$i",
+                containerCount = i,
+                timestamp = System.currentTimeMillis() + i,
+                estimatedValueCents = i * 10L
+            )
+            collectionRepo.insertCollection(entry)
+        }
+
+        assertEquals(totalItems, database.syncOutboxDao().observePendingOperations().first().size)
+
+        // syncAll must loop through batches until outbox is completely drained
+        val syncSuccess = syncManager.syncAll()
+        assertTrue("syncAll must succeed draining multiple batches", syncSuccess)
+
+        // Verify outbox is completely empty
+        val remainingPending = database.syncOutboxDao().observePendingOperations().first()
+        assertEquals("Outbox must be fully drained", 0, remainingPending.size)
+
+        // Verify all 110 items in local Room are marked as SYNCED
+        val allCollections = database.collectionDao().getAllCollections().first()
+        assertEquals(totalItems, allCollections.size)
+        assertTrue("All entries must be marked SYNCED", allCollections.all { it.syncState == SyncState.SYNCED.name })
+    }
+
+    @Test
+    fun partialNetworkInterruptionPreservesOrderAndHaltsBatch() = runBlocking {
+        val entry1 = CollectionEntryEntity(remoteId = "item-1", containerCount = 10, timestamp = 1000L, estimatedValueCents = 100L)
+        val entry2 = CollectionEntryEntity(remoteId = "item-2", containerCount = 20, timestamp = 2000L, estimatedValueCents = 200L)
+        val entry3 = CollectionEntryEntity(remoteId = "item-3", containerCount = 30, timestamp = 3000L, estimatedValueCents = 300L)
+
+        collectionRepo.insertCollection(entry1)
+        collectionRepo.insertCollection(entry2)
+        collectionRepo.insertCollection(entry3)
+
+        assertEquals(3, database.syncOutboxDao().observePendingOperations().first().size)
+
+        // Set failure hook specifically for item-2
+        fakeRemoteDataSource.failingRemoteIds = setOf("item-2")
+
+        val batchSuccess = syncManager.processOutboxBatch(50)
+        assertFalse("Batch must return false on network error", batchSuccess)
+
+        // Item 1 succeeded and was removed from outbox
+        val pending = database.syncOutboxDao().observePendingOperations().first()
+        assertEquals(2, pending.size)
+        assertEquals("item-2", pending[0].entityRemoteId)
+        assertEquals(1, pending[0].retryCount)
+        assertEquals("item-3", pending[1].entityRemoteId)
+        assertEquals(0, pending[1].retryCount) // Untouched to preserve strict chronological ordering
+    }
 }

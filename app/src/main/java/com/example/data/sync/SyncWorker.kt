@@ -20,17 +20,21 @@ class SyncWorker(
 ) : CoroutineWorker(appContext, workerParams) {
 
     override suspend fun doWork(): Result {
+        android.util.Log.i(TAG, "SyncWorker doWork started (attempt=$runAttemptCount)")
         val app = applicationContext as? ViraApp ?: return Result.failure()
         val syncManager = app.container.syncManager
 
         return try {
             val allSuccess = syncManager.syncAll()
             if (allSuccess) {
+                android.util.Log.i(TAG, "SyncWorker doWork finished successfully")
                 Result.success()
             } else {
+                android.util.Log.w(TAG, "SyncWorker doWork finished with pending retries")
                 Result.retry()
             }
         } catch (e: Exception) {
+            android.util.Log.e(TAG, "SyncWorker encountered exception: ${e.message}", e)
             if (runAttemptCount < 3) {
                 Result.retry()
             } else {
@@ -40,6 +44,7 @@ class SyncWorker(
     }
 
     companion object {
+        private const val TAG = "ViraSync"
         const val WORK_NAME = "vira_sync_worker"
         const val WORK_NAME_PERIODIC = "vira_periodic_sync_worker"
 

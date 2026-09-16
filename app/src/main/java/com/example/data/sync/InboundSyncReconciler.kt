@@ -21,8 +21,16 @@ open class InboundSyncReconciler(
     private val cursorManager: SyncCursorManager? = null
 ) {
 
+    companion object {
+        private const val TAG = "ViraSync"
+    }
+
     open suspend fun reconcile(response: RemoteSyncPullResponse, currentCursor: Long = 0L) {
         database.withTransaction {
+            android.util.Log.d(
+                TAG,
+                "Reconcile: starting transaction. currentCursor=$currentCursor, remoteNewCursor=${response.newCursor}"
+            )
             reconcileSpots(response.spots)
             reconcileCollections(response.collections)
             reconcileRedemptions(response.redemptions)
@@ -31,6 +39,7 @@ open class InboundSyncReconciler(
 
             if (response.newCursor > currentCursor) {
                 cursorManager?.setCursor(response.newCursor)
+                android.util.Log.i(TAG, "Cursor advanced: $currentCursor -> ${response.newCursor}")
             }
         }
     }
@@ -39,7 +48,10 @@ open class InboundSyncReconciler(
         if (remoteList.isEmpty()) return
         val localList = database.collectionDao().getAllCollections().firstOrNull() ?: emptyList()
         for (remote in remoteList) {
-            if (isPendingOutbox(remote.remoteId)) continue
+            if (isPendingOutbox(remote.remoteId)) {
+                android.util.Log.d(TAG, "Reconcile skip [Outbox Protection]: Collection remoteId=${remote.remoteId}")
+                continue
+            }
             val local = localList.find { it.remoteId == remote.remoteId }
             val serverMillis = parseIsoToMillis(remote.serverUpdatedAt)
             val version = remote.serverVersion ?: 1L
@@ -81,12 +93,16 @@ open class InboundSyncReconciler(
         if (remoteList.isEmpty()) return
         val localList = database.spotDao().getAllSpots().firstOrNull() ?: emptyList()
         for (remote in remoteList) {
-            if (isPendingOutbox(remote.remoteId)) continue
+            if (isPendingOutbox(remote.remoteId)) {
+                android.util.Log.d(TAG, "Reconcile skip [Outbox Protection]: Spot remoteId=${remote.remoteId}")
+                continue
+            }
             val local = localList.find { it.remoteId == remote.remoteId }
             val serverMillis = parseIsoToMillis(remote.serverUpdatedAt)
             val version = remote.serverVersion ?: 1L
 
             if (remote.deletedAt != null) {
+                android.util.Log.i(TAG, "Reconcile tombstone: Spot remoteId=${remote.remoteId}")
                 local?.let { database.spotDao().deleteSpotById(it.id) }
             } else {
                 val entity = local?.copy(
@@ -119,12 +135,16 @@ open class InboundSyncReconciler(
         if (remoteList.isEmpty()) return
         val localList = database.redemptionDao().getAllRedemptions().firstOrNull() ?: emptyList()
         for (remote in remoteList) {
-            if (isPendingOutbox(remote.remoteId)) continue
+            if (isPendingOutbox(remote.remoteId)) {
+                android.util.Log.d(TAG, "Reconcile skip [Outbox Protection]: Redemption remoteId=${remote.remoteId}")
+                continue
+            }
             val local = localList.find { it.remoteId == remote.remoteId }
             val serverMillis = parseIsoToMillis(remote.serverUpdatedAt)
             val version = remote.serverVersion ?: 1L
 
             if (remote.deletedAt != null) {
+                android.util.Log.i(TAG, "Reconcile tombstone: Redemption remoteId=${remote.remoteId}")
                 local?.let { database.redemptionDao().deleteRedemptionById(it.id) }
             } else {
                 val entity = local?.copy(
@@ -161,12 +181,16 @@ open class InboundSyncReconciler(
         if (remoteList.isEmpty()) return
         val localList = database.goalDao().getAllGoals().firstOrNull() ?: emptyList()
         for (remote in remoteList) {
-            if (isPendingOutbox(remote.remoteId)) continue
+            if (isPendingOutbox(remote.remoteId)) {
+                android.util.Log.d(TAG, "Reconcile skip [Outbox Protection]: Goal remoteId=${remote.remoteId}")
+                continue
+            }
             val local = localList.find { it.remoteId == remote.remoteId }
             val serverMillis = parseIsoToMillis(remote.serverUpdatedAt)
             val version = remote.serverVersion ?: 1L
 
             if (remote.deletedAt != null) {
+                android.util.Log.i(TAG, "Reconcile tombstone: Goal remoteId=${remote.remoteId}")
                 local?.let { database.goalDao().deleteGoalById(it.id) }
             } else {
                 val entity = local?.copy(
@@ -196,12 +220,16 @@ open class InboundSyncReconciler(
     }
 
     private suspend fun reconcileProfile(remote: RemoteProfileDto) {
-        if (isPendingOutbox(remote.remoteId)) return
+        if (isPendingOutbox(remote.remoteId)) {
+            android.util.Log.d(TAG, "Reconcile skip [Outbox Protection]: UserProfile remoteId=${remote.remoteId}")
+            return
+        }
         val local = database.userDao().getUserProfile().firstOrNull()
         val serverMillis = parseIsoToMillis(remote.serverUpdatedAt)
         val version = remote.serverVersion ?: 1L
 
         if (remote.deletedAt != null) {
+            android.util.Log.i(TAG, "Reconcile tombstone: UserProfile remoteId=${remote.remoteId}")
             database.userDao().clearUserProfile()
         } else {
             val entity = local?.copy(

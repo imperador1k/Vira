@@ -14,22 +14,35 @@ class SyncManager(
     private val reconciler: InboundSyncReconciler = InboundSyncReconciler(database, cursorManager)
 ) {
 
+    companion object {
+        private const val TAG = "ViraSync"
+    }
+
     /**
      * Pull remote changes from server since the stored cursor and reconcile locally.
      * Guaranteed atomic transaction: either all changes and cursor advance succeed, or none.
      */
     suspend fun pullAndReconcile(): Boolean {
         val cursor = cursorManager?.getCursor() ?: 0L
+        android.util.Log.d(TAG, "Pull starting with cursor=$cursor")
         val pullResponse = try {
             remoteDataSource.pullChanges(cursor)
         } catch (e: Exception) {
+            android.util.Log.w(TAG, "Pull remote query failed: ${e.message}")
             return false
         }
 
+        android.util.Log.i(
+            TAG,
+            "Pull received changes: spots=${pullResponse.spots.size}, collections=${pullResponse.collections.size}, redemptions=${pullResponse.redemptions.size}, goals=${pullResponse.goals.size}, newCursor=${pullResponse.newCursor}"
+        )
+
         return try {
             reconciler.reconcile(pullResponse, currentCursor = cursor)
+            android.util.Log.d(TAG, "Pull and reconciliation completed successfully")
             true
         } catch (e: Exception) {
+            android.util.Log.e(TAG, "Pull reconciliation transaction failed: ${e.message}", e)
             false
         }
     }
@@ -38,6 +51,7 @@ class SyncManager(
      * Executes a full bidirectional sync: pushes local pending changes, then pulls remote updates.
      */
     suspend fun syncAll(): Boolean {
+        android.util.Log.i(TAG, "Starting syncAll cycle...")
         var allPushed = true
         while (true) {
             val pending = database.syncOutboxDao().getPendingBatch(50)
@@ -49,6 +63,7 @@ class SyncManager(
             }
         }
         val pullSuccess = pullAndReconcile()
+        android.util.Log.i(TAG, "syncAll finished. allPushed=$allPushed, pullSuccess=$pullSuccess")
         return allPushed && pullSuccess
     }
 
@@ -59,11 +74,13 @@ class SyncManager(
     suspend fun processOutboxBatch(batchSize: Int = 50): Boolean {
         val pendingOps = database.syncOutboxDao().getPendingBatch(batchSize)
         if (pendingOps.isEmpty()) return true
+        android.util.Log.d(TAG, "processOutboxBatch: found ${pendingOps.size} pending ops")
 
         for (op in pendingOps) {
             val success = processOperation(op)
             if (!success) {
                 // Stop batch on first retryable network error to preserve ordering
+                android.util.Log.w(TAG, "processOutboxBatch: stopping batch early due to failure on opId=${op.operationId}")
                 return false
             }
         }
@@ -71,6 +88,10 @@ class SyncManager(
     }
 
     private suspend fun processOperation(op: SyncOutboxEntity): Boolean {
+        android.util.Log.d(
+            TAG,
+            "Push op: entity=${op.entityType}, remoteId=${op.entityRemoteId}, type=${op.operationType}, retry=${op.retryCount}"
+        )
         val result = if (op.operationType == OutboxOperationType.DELETE.name) {
             remoteDataSource.deleteEntity(op.entityType, op.entityRemoteId)
         } else {
@@ -263,15 +284,27 @@ class SyncManager(
 
         // 2. Remove outbox operation
         database.syncOutboxDao().deleteOperation(op.operationId)
+        android.util.Log.i(
+            TAG,
+            "Push SUCCESS: entity=${op.entityType}, remoteId=${op.entityRemoteId}, version=${result.remoteVersion}"
+        )
     }
 
     private suspend fun handleOperationConflict(op: SyncOutboxEntity, result: RemoteSyncResult.Conflict) {
         // Conflict policy: Do NOT merge numeric container quantities from two versions.
         // Update local entity metadata with conflict flag and delete from outbox.
+        android.util.Log.w(
+            TAG,
+            "Push CONFLICT: entity=${op.entityType}, remoteId=${op.entityRemoteId}. Preserving local state (no quantity merge), discarding outbox op."
+        )
         database.syncOutboxDao().deleteOperation(op.operationId)
     }
 
     private suspend fun handleOperationNetworkError(op: SyncOutboxEntity, result: RemoteSyncResult.NetworkError) {
+        android.util.Log.w(
+            TAG,
+            "Push NETWORK ERROR: entity=${op.entityType}, remoteId=${op.entityRemoteId}, err=${result.message}, retry=${op.retryCount + 1}"
+        )
         database.syncOutboxDao().updateOperation(
             op.copy(
                 retryCount = op.retryCount + 1,
