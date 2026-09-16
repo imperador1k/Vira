@@ -1,33 +1,35 @@
 package com.example.data.sync
 
-import android.content.Context
-import android.content.SharedPreferences
+import com.example.data.local.SyncMetadataDao
+import com.example.data.local.SyncMetadataEntity
 
 /**
- * Manages persistence of the remote synchronization cursor.
- * The cursor corresponds to the highest authoritative server_version processed by the client.
+ * Manages persistence of the remote synchronization cursor backed by Room sync_metadata.
+ * Guarantees ACID crash consistency when executed within Room database transactions.
  */
-class SyncCursorManager(context: Context) {
+class SyncCursorManager(
+    private val syncMetadataDao: SyncMetadataDao
+) {
 
-    private val prefs: SharedPreferences = context.getSharedPreferences(
-        PREFS_NAME,
-        Context.MODE_PRIVATE
-    )
-
-    fun getCursor(): Long {
-        return prefs.getLong(KEY_CURSOR, 0L)
+    suspend fun getCursor(): Long {
+        return syncMetadataDao.getValue(KEY_CURSOR)?.toLongOrNull() ?: 0L
     }
 
-    fun setCursor(cursor: Long) {
-        prefs.edit().putLong(KEY_CURSOR, cursor).apply()
+    suspend fun setCursor(cursor: Long) {
+        syncMetadataDao.setValue(
+            SyncMetadataEntity(
+                key = KEY_CURSOR,
+                value = cursor.toString(),
+                updatedAt = System.currentTimeMillis()
+            )
+        )
     }
 
-    fun clearCursor() {
-        prefs.edit().remove(KEY_CURSOR).apply()
+    suspend fun clearCursor() {
+        syncMetadataDao.deleteKey(KEY_CURSOR)
     }
 
     companion object {
-        private const val PREFS_NAME = "vira_sync_cursor_prefs"
-        private const val KEY_CURSOR = "sync_cursor_version"
+        const val KEY_CURSOR = "sync_cursor_version"
     }
 }

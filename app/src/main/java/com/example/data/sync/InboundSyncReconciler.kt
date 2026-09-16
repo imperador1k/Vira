@@ -16,17 +16,22 @@ import java.time.Instant
  * Implements strict outbox protection (never overwrites pending local un-synced edits)
  * and applies atomic transactional updates.
  */
-class InboundSyncReconciler(
-    private val database: AppDatabase
+open class InboundSyncReconciler(
+    private val database: AppDatabase,
+    private val cursorManager: SyncCursorManager? = null
 ) {
 
-    suspend fun reconcile(response: RemoteSyncPullResponse) {
+    open suspend fun reconcile(response: RemoteSyncPullResponse, currentCursor: Long = 0L) {
         database.withTransaction {
             reconcileSpots(response.spots)
             reconcileCollections(response.collections)
             reconcileRedemptions(response.redemptions)
             reconcileGoals(response.goals)
             response.profile?.let { reconcileProfile(it) }
+
+            if (response.newCursor > currentCursor) {
+                cursorManager?.setCursor(response.newCursor)
+            }
         }
     }
 

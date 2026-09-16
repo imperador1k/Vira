@@ -33,7 +33,11 @@ class AppContainer(private val context: Context) {
             AppDatabase.MIGRATION_1_3,
             AppDatabase.MIGRATION_3_4,
             AppDatabase.MIGRATION_1_4,
-            AppDatabase.MIGRATION_2_4
+            AppDatabase.MIGRATION_2_4,
+            AppDatabase.MIGRATION_4_5,
+            AppDatabase.MIGRATION_1_5,
+            AppDatabase.MIGRATION_2_5,
+            AppDatabase.MIGRATION_3_5
         )
         // Production safety: destructive migration completely removed to prevent data loss
         .build()
@@ -46,7 +50,7 @@ class AppContainer(private val context: Context) {
     }
 
     val syncCursorManager: SyncCursorManager by lazy {
-        SyncCursorManager(context)
+        SyncCursorManager(database.syncMetadataDao())
     }
 
     val syncManager: SyncManager by lazy {
@@ -89,5 +93,6 @@ class AppContainer(private val context: Context) {
 
     fun scheduleBackgroundSync() {
         SyncWorker.scheduleSync(context)
+        SyncWorker.schedulePeriodicSync(context)
     }
 }

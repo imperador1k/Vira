@@ -7,10 +7,12 @@ import com.example.data.local.AppDatabase
 import com.example.data.local.CollectionEntryEntity
 import com.example.data.local.SyncState
 import com.example.repository.CollectionRepository
+import androidx.room.withTransaction
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -31,12 +33,12 @@ class InboundSyncReconciliationTest {
     private lateinit var collectionRepo: CollectionRepository
 
     @Before
-    fun setUp() {
+    fun setUp() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         database = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
             .allowMainThreadQueries()
             .build()
-        cursorManager = SyncCursorManager(context)
+        cursorManager = SyncCursorManager(database.syncMetadataDao())
         cursorManager.clearCursor()
         fakeRemoteDataSource = FakeSyncRemoteDataSource()
         syncManager = SyncManager(database, fakeRemoteDataSource, cursorManager)
@@ -44,7 +46,7 @@ class InboundSyncReconciliationTest {
     }
 
     @After
-    fun tearDown() {
+    fun tearDown() = runBlocking {
         cursorManager.clearCursor()
         database.close()
     }
@@ -156,5 +158,105 @@ class InboundSyncReconciliationTest {
         val collections = database.collectionDao().getAllCollections().first()
         assertTrue(collections.isEmpty())
         assertEquals(6L, cursorManager.getCursor())
+    }
+
+    @Test
+    fun replayIdempotencyMaintainsIdenticalStateWithoutDuplicates() = runBlocking {
+        val remoteId = UUID.randomUUID().toString()
+        val pullResponse = RemoteSyncPullResponse(
+            collections = listOf(
+                RemoteCollectionDto(
+                    remoteId = remoteId,
+                    containerCount = 25,
+                    timestamp = 1700000000000L,
+                    estimatedValueCents = 250L,
+                    note = "Lisbon Replay Test",
+                    serverVersion = 50L
+                )
+            ),
+            newCursor = 50L
+        )
+        fakeRemoteDataSource.setPullResponse(pullResponse)
+
+        // 1st apply
+        val firstRun = syncManager.pullAndReconcile()
+        assertTrue(firstRun)
+        assertEquals(1, database.collectionDao().getAllCollections().first().size)
+        assertEquals(50L, cursorManager.getCursor())
+
+        // 2nd apply (exact same replay)
+        val secondRun = syncManager.pullAndReconcile()
+        assertTrue(secondRun)
+        val collectionsAfterReplay = database.collectionDao().getAllCollections().first()
+        assertEquals(1, collectionsAfterReplay.size) // No duplicates
+        val entry = collectionsAfterReplay.first()
+        assertEquals(25, entry.containerCount)
+        assertEquals(SyncState.SYNCED.name, entry.syncState)
+        assertEquals(50L, cursorManager.getCursor())
+    }
+
+    @Test
+    fun crashConsistencyRollsBackBothDataAndCursorOnFailure() = runBlocking {
+        // Prepare initial cursor state
+        cursorManager.setCursor(10L)
+
+        // Failing reconciler simulating a mid-transaction SQLite crash
+        val failingReconciler = object : InboundSyncReconciler(database, cursorManager) {
+            override suspend fun reconcile(response: RemoteSyncPullResponse, currentCursor: Long) {
+                database.withTransaction {
+                    // Step 1: Insert an entry
+                    database.collectionDao().insertCollection(
+                        CollectionEntryEntity(
+                            remoteId = "crash-test-id",
+                            containerCount = 99,
+                            timestamp = 1700000000000L,
+                            estimatedValueCents = 990L
+                        )
+                    )
+                    // Step 2: Simulate crash before commit
+                    throw java.sql.SQLException("Simulated power failure / disk crash")
+                }
+            }
+        }
+
+        val testSyncManager = SyncManager(
+            database = database,
+            remoteDataSource = fakeRemoteDataSource,
+            cursorManager = cursorManager,
+            reconciler = failingReconciler
+        )
+
+        val success = testSyncManager.pullAndReconcile()
+        assertFalse("Pull must fail when transaction throws exception", success)
+
+        // Verify ACID rollback: neither the collection nor the cursor changed
+        val collections = database.collectionDao().getAllCollections().first()
+        assertTrue("Rolled-back collection must not exist", collections.none { it.remoteId == "crash-test-id" })
+        assertEquals("Sync cursor must not advance on crash", 10L, cursorManager.getCursor())
+    }
+
+    @Test
+    fun offlineBehaviorPreservesOutboxAndDoesNotCorruptLocalState() = runBlocking {
+        // User inserts offline entry
+        val entry = CollectionEntryEntity(
+            containerCount = 30,
+            timestamp = System.currentTimeMillis(),
+            estimatedValueCents = 300L,
+            note = "Offline Pending"
+        )
+        collectionRepo.insertCollection(entry)
+        assertEquals(1, database.syncOutboxDao().observePendingOperations().first().size)
+
+        // Simulate network failure
+        fakeRemoteDataSource.shouldFailWithNetworkError = true
+
+        val syncSuccess = syncManager.syncAll()
+        assertFalse(syncSuccess)
+
+        // Outbox must remain intact with retryable state
+        assertEquals(1, database.syncOutboxDao().observePendingOperations().first().size)
+        val current = database.collectionDao().getAllCollections().first().first()
+        assertEquals(SyncState.PENDING_UPLOAD.name, current.syncState)
+        assertEquals(0L, cursorManager.getCursor())
     }
 }

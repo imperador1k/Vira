@@ -11,7 +11,7 @@ class SyncManager(
     private val database: AppDatabase,
     private val remoteDataSource: SyncRemoteDataSource,
     private val cursorManager: SyncCursorManager? = null,
-    private val reconciler: InboundSyncReconciler = InboundSyncReconciler(database)
+    private val reconciler: InboundSyncReconciler = InboundSyncReconciler(database, cursorManager)
 ) {
 
     /**
@@ -27,10 +27,7 @@ class SyncManager(
         }
 
         return try {
-            reconciler.reconcile(pullResponse)
-            if (pullResponse.newCursor > cursor) {
-                cursorManager?.setCursor(pullResponse.newCursor)
-            }
+            reconciler.reconcile(pullResponse, currentCursor = cursor)
             true
         } catch (e: Exception) {
             false
@@ -41,9 +38,18 @@ class SyncManager(
      * Executes a full bidirectional sync: pushes local pending changes, then pulls remote updates.
      */
     suspend fun syncAll(): Boolean {
-        val pushSuccess = processOutboxBatch()
+        var allPushed = true
+        while (true) {
+            val pending = database.syncOutboxDao().getPendingBatch(50)
+            if (pending.isEmpty()) break
+            val batchSuccess = processOutboxBatch(50)
+            if (!batchSuccess) {
+                allPushed = false
+                break
+            }
+        }
         val pullSuccess = pullAndReconcile()
-        return pushSuccess && pullSuccess
+        return allPushed && pullSuccess
     }
 
     /**

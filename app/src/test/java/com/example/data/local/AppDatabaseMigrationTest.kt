@@ -243,7 +243,11 @@ class AppDatabaseMigrationTest {
                 AppDatabase.MIGRATION_1_3,
                 AppDatabase.MIGRATION_3_4,
                 AppDatabase.MIGRATION_1_4,
-                AppDatabase.MIGRATION_2_4
+                AppDatabase.MIGRATION_2_4,
+                AppDatabase.MIGRATION_4_5,
+                AppDatabase.MIGRATION_1_5,
+                AppDatabase.MIGRATION_2_5,
+                AppDatabase.MIGRATION_3_5
             )
             .build()
 
@@ -272,6 +276,10 @@ class AppDatabaseMigrationTest {
         assertEquals("Maria", profile!!.name)
         assertNotNull(profile.remoteId)
 
+        // Verify sync_metadata table and DAO
+        roomDb.syncMetadataDao().setValue(SyncMetadataEntity("test_key", "test_value"))
+        assertEquals("test_value", roomDb.syncMetadataDao().getValue("test_key"))
+
         // Insert new entry with automatic UUID and verify outbox DAO works
         val newId = roomDb.collectionDao().insertCollection(
             CollectionEntryEntity(
@@ -285,5 +293,42 @@ class AppDatabaseMigrationTest {
         assertEquals(3, roomDb.collectionDao().getAllCollections().first().size)
 
         roomDb.close()
+    }
+
+    @Test
+    fun migration_4_to_5_creates_sync_metadata_table_and_preserves_data() = runBlocking {
+        val db = createOpenHelper(1)
+        AppDatabase.MIGRATION_1_2.migrate(db)
+        AppDatabase.MIGRATION_2_3.migrate(db)
+        AppDatabase.MIGRATION_3_4.migrate(db)
+
+        db.execSQL("INSERT INTO collection_entry (id, containerCount, timestamp, estimatedValueCents, remoteId, createdAt, updatedAt, syncState) VALUES (99, 10, 1700000000000, 100, 'col-99', 1700000000000, 1700000000000, 'SYNCED')")
+        db.execSQL("INSERT INTO sync_outbox (operationId, entityType, entityRemoteId, operationType, createdAt, retryCount, payloadVersion) VALUES ('op-99', 'COLLECTION_ENTRY', 'col-99', 'UPSERT', 1700000000000, 0, 1)")
+
+        // Execute 4 -> 5 migration
+        AppDatabase.MIGRATION_4_5.migrate(db)
+
+        // Verify sync_metadata table exists and works
+        db.execSQL("INSERT INTO sync_metadata (`key`, `value`, `updatedAt`) VALUES ('sync_cursor_version', '12345', 1700000000000)")
+        val cursor = db.query("SELECT `value` FROM sync_metadata WHERE `key` = 'sync_cursor_version'")
+        assertTrue(cursor.moveToFirst())
+        assertEquals("12345", cursor.getString(0))
+        cursor.close()
+
+        // Verify existing rows in collection_entry and sync_outbox survive intact
+        val colCursor = db.query("SELECT containerCount, remoteId, syncState FROM collection_entry WHERE id = 99")
+        assertTrue(colCursor.moveToFirst())
+        assertEquals(10, colCursor.getInt(0))
+        assertEquals("col-99", colCursor.getString(1))
+        assertEquals("SYNCED", colCursor.getString(2))
+        colCursor.close()
+
+        val outboxCursor = db.query("SELECT operationId, entityRemoteId FROM sync_outbox WHERE operationId = 'op-99'")
+        assertTrue(outboxCursor.moveToFirst())
+        assertEquals("op-99", outboxCursor.getString(0))
+        assertEquals("col-99", outboxCursor.getString(1))
+        outboxCursor.close()
+
+        db.close()
     }
 }

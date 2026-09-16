@@ -15,9 +15,10 @@ import java.util.UUID
         ReturnPointEntity::class,
         FavoriteReturnPointEntity::class,
         GoalEntity::class,
-        SyncOutboxEntity::class
+        SyncOutboxEntity::class,
+        SyncMetadataEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -29,6 +30,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun favoriteReturnPointDao(): FavoriteReturnPointDao
     abstract fun goalDao(): GoalDao
     abstract fun syncOutboxDao(): SyncOutboxDao
+    abstract fun syncMetadataDao(): SyncMetadataDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -211,6 +213,39 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 MIGRATION_2_3.migrate(db)
                 MIGRATION_3_4.migrate(db)
+            }
+        }
+
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS sync_metadata (
+                        `key` TEXT NOT NULL PRIMARY KEY,
+                        `value` TEXT NOT NULL,
+                        `updatedAt` INTEGER NOT NULL
+                    )
+                """.trimIndent())
+            }
+        }
+
+        val MIGRATION_1_5 = object : Migration(1, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                MIGRATION_1_4.migrate(db)
+                MIGRATION_4_5.migrate(db)
+            }
+        }
+
+        val MIGRATION_2_5 = object : Migration(2, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                MIGRATION_2_4.migrate(db)
+                MIGRATION_4_5.migrate(db)
+            }
+        }
+
+        val MIGRATION_3_5 = object : Migration(3, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                MIGRATION_3_4.migrate(db)
+                MIGRATION_4_5.migrate(db)
             }
         }
     }
