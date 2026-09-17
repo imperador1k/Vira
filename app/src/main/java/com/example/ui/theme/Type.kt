@@ -7,105 +7,113 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
 /**
- * Vira Design System - Typography Tokens
+ * Vira Design System - Premium Typography Hierarchy
  * 
  * Rules:
- * - Numerical values dominate visually (HeroNumber, MetricLarge, MetricMedium).
- * - Section headers are crisp and structured (SectionTitle).
- * - European minimal aesthetic with tight letter spacing for big numbers.
+ * - Single consistent modern sans-serif typeface (System Sans with custom optical tracking).
+ * - Numeric values dominate visually with tight negative tracking.
+ * - Confident hierarchy from DisplayNumber (58sp) down to Metadata (12sp).
  */
 object ViraTypography {
-    val HeroNumber = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Normal,
-        fontSize = 68.sp,
-        lineHeight = 72.sp,
-        letterSpacing = (-3).sp
-    )
-
-    val HeroLabel = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 13.sp,
-        lineHeight = 16.sp,
-        letterSpacing = 1.sp
-    )
-
-    val MetricLarge = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 32.sp,
-        lineHeight = 38.sp,
-        letterSpacing = (-1).sp
-    )
-
-    val MetricMedium = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 22.sp,
-        lineHeight = 28.sp,
-        letterSpacing = (-0.5).sp
-    )
-
-    val PageTitle = TextStyle(
+    // 1. Display Hero Number (48-64sp)
+    val DisplayLarge = TextStyle(
         fontFamily = FontFamily.Default,
         fontWeight = FontWeight.Bold,
-        fontSize = 24.sp,
-        lineHeight = 30.sp,
-        letterSpacing = (-0.5).sp
+        fontSize = 58.sp,
+        lineHeight = 62.sp,
+        letterSpacing = (-2.5).sp
     )
 
+    // 2. Secondary Display / Big Values
+    val DisplayMedium = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Bold,
+        fontSize = 36.sp,
+        lineHeight = 42.sp,
+        letterSpacing = (-1.2).sp
+    )
+
+    // 3. Screen Title (28-32sp)
+    val ScreenTitle = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Bold,
+        fontSize = 28.sp,
+        lineHeight = 34.sp,
+        letterSpacing = (-0.6).sp
+    )
+
+    // 4. Section Title (18-22sp)
     val SectionTitle = TextStyle(
         fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Bold,
-        fontSize = 12.sp,
-        lineHeight = 16.sp,
-        letterSpacing = 1.2.sp
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 19.sp,
+        lineHeight = 25.sp,
+        letterSpacing = (-0.3).sp
     )
 
+    // 5. Eyebrow Tag / Structured Category Label
+    val Eyebrow = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Bold,
+        fontSize = 11.sp,
+        lineHeight = 15.sp,
+        letterSpacing = 1.6.sp
+    )
+
+    // 6. Body Primary (15-17sp)
     val Body = TextStyle(
         fontFamily = FontFamily.Default,
         fontWeight = FontWeight.Normal,
-        fontSize = 15.sp,
-        lineHeight = 22.sp,
+        fontSize = 16.sp,
+        lineHeight = 23.sp,
         letterSpacing = 0.sp
     )
 
+    // 7. Body Secondary / Metadata (13-14sp)
     val BodySecondary = TextStyle(
         fontFamily = FontFamily.Default,
         fontWeight = FontWeight.Normal,
-        fontSize = 13.sp,
-        lineHeight = 18.sp,
+        fontSize = 14.sp,
+        lineHeight = 19.sp,
         letterSpacing = 0.sp
     )
 
+    // 8. Action & Button Label (15-16sp)
     val ButtonLabel = TextStyle(
         fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.SemiBold,
+        fontWeight = FontWeight.Bold,
         fontSize = 15.sp,
         lineHeight = 20.sp,
         letterSpacing = 0.2.sp
     )
 
+    // 9. Caption / Fine Print (12sp)
     val Caption = TextStyle(
         fontFamily = FontFamily.Default,
         fontWeight = FontWeight.Medium,
-        fontSize = 11.sp,
-        lineHeight = 14.sp,
-        letterSpacing = 0.3.sp
+        fontSize = 12.sp,
+        lineHeight = 16.sp,
+        letterSpacing = 0.2.sp
     )
+
+    // Backward-compatible aliases
+    val HeroNumber = DisplayLarge
+    val HeroLabel = Eyebrow
+    val MetricLarge = DisplayMedium
+    val MetricMedium = SectionTitle
+    val PageTitle = ScreenTitle
 }
 
 /**
- * Standard Material 3 Typography bridge
+ * Material 3 Typography Bridge
  */
 val Typography = Typography(
-    displayLarge = ViraTypography.HeroNumber,
-    headlineLarge = ViraTypography.MetricLarge,
-    headlineMedium = ViraTypography.MetricMedium,
-    titleLarge = ViraTypography.PageTitle,
-    titleMedium = ViraTypography.ButtonLabel,
-    titleSmall = ViraTypography.SectionTitle,
+    displayLarge = ViraTypography.DisplayLarge,
+    headlineLarge = ViraTypography.DisplayMedium,
+    headlineMedium = ViraTypography.ScreenTitle,
+    titleLarge = ViraTypography.ScreenTitle,
+    titleMedium = ViraTypography.SectionTitle,
+    titleSmall = ViraTypography.Eyebrow,
     bodyLarge = ViraTypography.Body,
     bodyMedium = ViraTypography.BodySecondary,
     labelLarge = ViraTypography.ButtonLabel,

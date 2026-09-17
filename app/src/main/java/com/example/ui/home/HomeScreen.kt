@@ -180,7 +180,16 @@ fun HomeScreen(
                 )
             }
         } else {
-            // POPULATED HOME - Open Activity Dashboard (No boxy card-on-card stacking)
+            // POPULATED HOME - Open Activity Dashboard with distinct Vira visual hierarchy
+            val greeting = remember {
+                val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+                when (hour) {
+                    in 5..11 -> "Bom dia 👋"
+                    in 12..19 -> "Boa tarde 👋"
+                    else -> "Boa noite 👋"
+                }
+            }
+
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
@@ -189,7 +198,11 @@ fun HomeScreen(
                 contentPadding = PaddingValues(bottom = ViraSpacing.space48)
             ) {
                 item {
-                    ViraTopBar(title = "Vira", onProfileClick = onNavigateToProfile)
+                    ViraTopBar(
+                        title = "Vira",
+                        subtitle = greeting,
+                        onProfileClick = onNavigateToProfile
+                    )
                     Spacer(modifier = Modifier.height(ViraSpacing.space16))
                 }
 
@@ -207,321 +220,194 @@ fun HomeScreen(
                                 scope.launch { appContainer.userPreferencesRepository.dismissAccountReminderForever() }
                             }
                         )
-                        Spacer(modifier = Modifier.height(ViraSpacing.space16))
+                        Spacer(modifier = Modifier.height(ViraSpacing.space24))
                     }
                 }
 
-                // 1. HOJE (Hero activity focus)
+                // 1. HERO RECOLHA SECTION (Dominant collection amount)
                 item {
-                    Text(
-                        text = "HOJE",
-                        style = ViraTypography.SectionTitle,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(ViraSpacing.space4))
-                    Row(verticalAlignment = Alignment.Bottom) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
                         Text(
                             text = "${uiState.todayContainers}",
-                            style = ViraTypography.HeroNumber.copy(fontSize = 54.sp, lineHeight = 58.sp),
-                            color = MaterialTheme.colorScheme.onSurface
+                            style = ViraTypography.DisplayLarge,
+                            color = MaterialTheme.colorScheme.onBackground
                         )
-                        Spacer(modifier = Modifier.width(ViraSpacing.space8))
+                        Spacer(modifier = Modifier.height(ViraSpacing.space4))
                         Text(
-                            text = if (uiState.todayContainers == 1) "embalagem" else "embalagens",
-                            style = ViraTypography.BodySecondary,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(bottom = 10.dp)
+                            text = "EMBALAGENS",
+                            style = ViraTypography.Eyebrow,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(ViraSpacing.space8))
+                        Text(
+                            text = "${FormatUtils.formatCurrency(uiState.todayEstimatedValue)} potencial",
+                            style = ViraTypography.Body,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.height(ViraSpacing.space24))
+
+                        // HERO PRIMARY ACTION: "+ Registar recolha"
+                        com.example.ui.components.ViraHeroButton(
+                            text = "+ Registar recolha",
+                            onClick = { showBottomSheet = true }
                         )
                     }
-                    Spacer(modifier = Modifier.height(ViraSpacing.space4))
-                    Text(
-                        text = "${FormatUtils.formatCurrency(uiState.todayEstimatedValue)} potencial",
-                        style = ViraTypography.Body,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.height(ViraSpacing.space16))
-                    ViraPrimaryButton(
-                        text = "+ Registar recolha",
-                        onClick = { showBottomSheet = true },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(modifier = Modifier.height(ViraSpacing.space24))
-                    HorizontalDivider(
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f),
-                        thickness = 0.5.dp
-                    )
-                    Spacer(modifier = Modifier.height(ViraSpacing.space24))
+                    Spacer(modifier = Modifier.height(ViraSpacing.space32))
                 }
 
-                // 2. ESTE MÊS (Trends & micro-sparkline)
+                // 2. CONTEXTUAL PROGRESS: Por devolver
+                val collected = uiState.balance.containersCollected
+                val accepted = uiState.balance.containersAccepted
+                val returnRate = if (collected > 0) (accepted.toFloat() / collected).coerceIn(0f, 1f) else 0f
+                val remaining = uiState.balance.containersRemainingToReturn
+
+                if (collected > 0) {
+                    item {
+                        ViraSurfaceCard(modifier = Modifier.fillMaxWidth()) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "POR DEVOLVER",
+                                    style = ViraTypography.Eyebrow,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = FormatUtils.formatCurrency(uiState.balance.remainingPotentialValueCents),
+                                    style = ViraTypography.ButtonLabel,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(ViraSpacing.space8))
+                            Row(verticalAlignment = Alignment.Bottom) {
+                                Text(
+                                    text = "$remaining",
+                                    style = ViraTypography.DisplayMedium,
+                                    color = MaterialTheme.colorScheme.onBackground
+                                )
+                                Spacer(modifier = Modifier.width(ViraSpacing.space8))
+                                Text(
+                                    text = if (remaining == 1) "embalagem restante" else "embalagens restantes",
+                                    style = ViraTypography.BodySecondary,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(bottom = 6.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(ViraSpacing.space12))
+                            com.example.ui.components.ViraProgressBar(
+                                progress = returnRate,
+                                height = 6.dp
+                            )
+                            Spacer(modifier = Modifier.height(ViraSpacing.space12))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "$accepted devolvidas de $collected (${(returnRate * 100).toInt()}%)",
+                                    style = ViraTypography.Caption,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = "Registar devolução →",
+                                    style = ViraTypography.Caption.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.clickable(onClick = onNavigateToRedemption)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(ViraSpacing.space24))
+                    }
+                }
+
+                // 3. BENTO GRID OF CONTEXTUAL CARDS:
+                // - Esta semana / Este mês
+                // - Meta atual
                 item {
                     val trendText = uiState.monthTrendPercentage?.let { if (it >= 0) "+$it%" else "$it%" }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        horizontalArrangement = Arrangement.spacedBy(ViraSpacing.space12)
                     ) {
-                        Text(
-                            text = "ESTE MÊS",
-                            style = ViraTypography.SectionTitle,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        com.example.ui.components.ViraStatCard(
+                            eyebrow = "ESTE MÊS",
+                            value = "${uiState.monthContainers}",
+                            subtitle = "${FormatUtils.formatCurrency(uiState.monthEstimatedValue)} potencial",
+                            badgeText = trendText,
+                            modifier = Modifier.weight(1f)
                         )
-                        if (trendText != null) {
-                            Text(
-                                text = trendText,
-                                style = ViraTypography.Caption,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
+                        com.example.ui.components.ViraStatCard(
+                            eyebrow = "TAXA DEVOLUÇÃO",
+                            value = "${(returnRate * 100).toInt()}%",
+                            subtitle = if (remaining > 0) "$remaining por devolver" else "Tudo em dia",
+                            modifier = Modifier.weight(1f)
+                        )
                     }
                     Spacer(modifier = Modifier.height(ViraSpacing.space12))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.Bottom
-                    ) {
-                        Column {
-                            Text(
-                                text = "${uiState.monthContainers}",
-                                style = ViraTypography.MetricMedium,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = if (uiState.monthContainers == 1) "embalagem" else "embalagens",
-                                style = ViraTypography.Caption,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text(
-                                text = FormatUtils.formatCurrency(uiState.monthEstimatedValue),
-                                style = ViraTypography.MetricMedium,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = "potencial",
-                                style = ViraTypography.Caption,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                    if (uiState.monthSparklineData.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(ViraSpacing.space16))
-                        ViraSparkline(
-                            data = uiState.monthSparklineData,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(40.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(ViraSpacing.space24))
-                    HorizontalDivider(
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f),
-                        thickness = 0.5.dp
-                    )
-                    Spacer(modifier = Modifier.height(ViraSpacing.space24))
                 }
 
-                // 3. POR DEVOLVER (Activity progress & quick recovery action)
+                // SPOTS & INSIGHT ROW
                 item {
-                    val collected = uiState.balance.containersCollected
-                    val accepted = uiState.balance.containersAccepted
-                    val returnRate = if (collected > 0) (accepted.toFloat() / collected).coerceIn(0f, 1f) else 0f
-                    val animatedRate by animateFloatAsState(targetValue = returnRate, label = "returnRateAnim")
-                    val remaining = uiState.balance.containersRemainingToReturn
-
-                    Text(
-                        text = "POR DEVOLVER",
-                        style = ViraTypography.SectionTitle,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(ViraSpacing.space4))
-                    Row(verticalAlignment = Alignment.Bottom) {
-                        Text(
-                            text = "$remaining",
-                            style = ViraTypography.HeroNumber.copy(fontSize = 40.sp, lineHeight = 44.sp),
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.width(ViraSpacing.space8))
-                        Text(
-                            text = if (remaining == 1) "embalagem" else "embalagens",
-                            style = ViraTypography.BodySecondary,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
-                    }
-                    Text(
-                        text = "${FormatUtils.formatCurrency(uiState.balance.remainingPotentialValueCents)} por recuperar",
-                        style = ViraTypography.BodySecondary,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(ViraSpacing.space16))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = "$collected recolhidas · $accepted devolvidas",
-                            style = ViraTypography.Caption,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(ViraSpacing.space8))
-                    // Thin progress line (4.dp)
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(4.dp)
-                            .clip(RoundedCornerShape(2.dp))
-                            .background(LocalViraExtraColors.current.surfaceElevated)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth(animatedRate)
-                                .height(4.dp)
-                                .clip(RoundedCornerShape(2.dp))
-                                .background(MaterialTheme.colorScheme.primary)
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(ViraSpacing.space16))
-                    Row(
-                        modifier = Modifier
-                            .clickable(onClick = onNavigateToRedemption)
-                            .padding(vertical = ViraSpacing.space4),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Registar devolução →",
-                            style = ViraTypography.ButtonLabel,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(ViraSpacing.space24))
-                    HorizontalDivider(
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f),
-                        thickness = 0.5.dp
-                    )
-                    Spacer(modifier = Modifier.height(ViraSpacing.space24))
-                }
-
-                // 4. PARA TI (RecommendationEngine insight)
-                uiState.topInsight?.let { insight ->
-                    item {
-                        Text(
-                            text = "PARA TI",
-                            style = ViraTypography.SectionTitle,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(ViraSpacing.space8))
-                        when (insight) {
-                            is Insight.BestDay -> {
-                                ViraInsightCard(
-                                    title = "Dia mais produtivo",
-                                    description = "Com base no teu histórico, costumas recolher em média ${String.format(Locale.getDefault(), "%.1f", insight.averageContainers)} embalagens às ${insight.dayOfWeek.lowercase()}s."
-                                )
-                            }
-                            is Insight.Consistency -> {
-                                ViraInsightCard(
-                                    title = "Consistência de recolha",
-                                    description = "Nas últimas ${insight.weeksInARow} semanas mantiveste registos contínuos de recolha."
-                                )
-                            }
-                            is Insight.Milestone -> {
-                                ViraInsightCard(
-                                    title = "Marco alcançado",
-                                    description = insight.message
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(ViraSpacing.space24))
-                        HorizontalDivider(
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f),
-                            thickness = 0.5.dp
-                        )
-                        Spacer(modifier = Modifier.height(ViraSpacing.space24))
-                    }
-                }
-
-                // 5. PERTO DE TI (Compact geospatial preview)
-                item {
-                    Text(
-                        text = "PERTO DE TI",
-                        style = ViraTypography.SectionTitle,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(ViraSpacing.space12))
                     val best = uiState.bestSpot
-                    if (best != null) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(ViraRadius.medium))
-                                .background(LocalViraExtraColors.current.surfaceElevated)
-                                .clickable { onNavigateToSpot(best.id) }
-                                .padding(ViraSpacing.space16),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Place,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(ViraSpacing.space12)
+                    ) {
+                        if (best != null) {
+                            com.example.ui.components.ViraStatCard(
+                                eyebrow = "MELHOR SPOT",
+                                value = best.name,
+                                subtitle = "${best.lifetimeContainers} recolhidas",
+                                icon = Icons.Default.Place,
+                                modifier = Modifier.weight(1f),
+                                onClick = { onNavigateToSpot(best.id) }
                             )
-                            Spacer(modifier = Modifier.width(ViraSpacing.space12))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = best.name,
-                                    style = ViraTypography.ButtonLabel,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Spacer(modifier = Modifier.height(ViraSpacing.space4))
-                                Text(
-                                    text = "${best.lifetimeContainers} recolhidas · ${String.format(Locale.getDefault(), "%.1f", best.averageContainersPerVisit)} / visita",
-                                    style = ViraTypography.Caption,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Icon(
-                                imageVector = Icons.Default.ChevronRight,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        } else {
+                            com.example.ui.components.ViraStatCard(
+                                eyebrow = "SPOTS",
+                                value = "Explorar",
+                                subtitle = "Descobre no mapa",
+                                icon = Icons.Default.Place,
+                                modifier = Modifier.weight(1f),
+                                onClick = onNavigateToMap
                             )
                         }
-                    } else {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(ViraRadius.medium))
-                                .background(LocalViraExtraColors.current.surfaceElevated)
-                                .clickable { onNavigateToMap() }
-                                .padding(ViraSpacing.space16),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Place,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(modifier = Modifier.width(ViraSpacing.space12))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Explorar mapa",
-                                    style = ViraTypography.ButtonLabel,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Spacer(modifier = Modifier.height(ViraSpacing.space4))
-                                Text(
-                                    text = "Descobre pontos de devolução e cria spots de recolha",
-                                    style = ViraTypography.Caption,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+
+                        // Insight or Map StatCard
+                        if (uiState.topInsight != null) {
+                            val insightTitle = when (uiState.topInsight) {
+                                is Insight.BestDay -> "Melhor Dia"
+                                is Insight.Consistency -> "Consistência"
+                                is Insight.Milestone -> "Marco"
+                                else -> "Atividade"
                             }
-                            Icon(
-                                imageVector = Icons.Default.ChevronRight,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            val insightDesc = when (val ins = uiState.topInsight) {
+                                is Insight.BestDay -> "${ins.dayOfWeek}"
+                                is Insight.Consistency -> "${ins.weeksInARow} semanas"
+                                is Insight.Milestone -> ins.message
+                                else -> "Em curso"
+                            }
+                            com.example.ui.components.ViraStatCard(
+                                eyebrow = insightTitle.uppercase(),
+                                value = insightDesc,
+                                subtitle = "Com base no histórico",
+                                modifier = Modifier.weight(1f)
+                            )
+                        } else {
+                            com.example.ui.components.ViraStatCard(
+                                eyebrow = "MAPA",
+                                value = "Pontos Vira",
+                                subtitle = "Devolução & spots",
+                                icon = Icons.Default.Place,
+                                modifier = Modifier.weight(1f),
+                                onClick = onNavigateToMap
                             )
                         }
                     }
+                    Spacer(modifier = Modifier.height(ViraSpacing.space24))
                 }
             }
         }
@@ -535,9 +421,13 @@ fun HomeScreen(
                 spots = uiState.spots,
                 initialCount = draft.quantity,
                 initialSpotId = draft.selectedSpotId,
+                initialNote = draft.note,
                 pickedCoordinate = if (draft.hasLocation) Pair(draft.selectedLatitude!!, draft.selectedLongitude!!) else null,
                 onQuantityChange = { newCount ->
                     viewModel.setDraftQuantity(newCount)
+                },
+                onNoteChange = { newNote ->
+                    viewModel.setDraftNote(newNote)
                 },
                 onDismiss = {
                     scope.launch { sheetState.hide() }.invokeOnCompletion {
@@ -545,9 +435,10 @@ fun HomeScreen(
                         viewModel.closeDraftSheet()
                     }
                 },
-                onSave = { count, spotId ->
+                onSave = { count, spotId, note ->
                     viewModel.setDraftQuantity(count)
                     viewModel.setDraftSpot(spotId)
+                    viewModel.setDraftNote(note)
                     viewModel.saveDraftCollection {
                         scope.launch { sheetState.hide() }.invokeOnCompletion {
                             showBottomSheet = false
@@ -581,6 +472,11 @@ fun HomeScreen(
                     scope.launch {
                         appContainer.authRepository.signUp(email, pass)
                     }
+                },
+                onResetPassword = { email ->
+                    scope.launch {
+                        appContainer.authRepository.sendPasswordResetEmail(email)
+                    }
                 }
             )
         }
@@ -605,13 +501,13 @@ private fun AccountReminderCard(
             Spacer(modifier = Modifier.width(ViraSpacing.space12))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Não percas o teu histórico",
+                    text = "Protege o teu histórico",
                     style = ViraTypography.ButtonLabel,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(modifier = Modifier.height(ViraSpacing.space4))
                 Text(
-                    text = "Cria uma conta para fazer backup das tuas recolhas e recuperar os teus dados se mudares de telemóvel.",
+                    text = "Cria uma conta para fazer backup das tuas recolhas, recuperar os teus dados noutro telemóvel e personalizar o teu perfil.",
                     style = ViraTypography.Caption,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

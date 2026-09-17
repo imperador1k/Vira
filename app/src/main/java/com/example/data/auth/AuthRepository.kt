@@ -33,6 +33,8 @@ interface AuthRepository {
 
     suspend fun refreshAuthState()
 
+    suspend fun sendPasswordResetEmail(email: String): Result<Unit>
+
     fun getCurrentUserId(): String?
 
     fun getCurrentEmail(): String?

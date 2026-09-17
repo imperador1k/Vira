@@ -64,6 +64,8 @@ class AppContainer(private val context: Context) {
                 Result.failure(IllegalStateException("Supabase not configured"))
             override suspend fun signOut(): Result<Unit> = Result.success(Unit)
             override suspend fun refreshAuthState() {}
+            override suspend fun sendPasswordResetEmail(email: String): Result<Unit> =
+                Result.failure(IllegalStateException("Supabase not configured"))
             override fun getCurrentUserId(): String? = null
             override fun getCurrentEmail(): String? = null
         }
@@ -139,6 +141,21 @@ class AppContainer(private val context: Context) {
 
     val userPreferencesRepository: com.example.data.preferences.UserPreferencesRepository by lazy {
         com.example.data.preferences.UserPreferencesRepository(context)
+    }
+
+    val backupPreferencesRepository: com.example.data.backup.BackupPreferencesRepository by lazy {
+        com.example.data.backup.BackupPreferencesRepository(context)
+    }
+
+    val backupManager: com.example.data.backup.BackupManager by lazy {
+        com.example.data.backup.BackupManager(
+            context = context,
+            database = database,
+            userPreferencesRepository = userPreferencesRepository,
+            backupPreferencesRepository = backupPreferencesRepository,
+            authRepository = authRepository,
+            supabaseClient = com.example.data.sync.supabase.SupabaseClientProvider.getClient()
+        )
     }
 
     fun scheduleBackgroundSync() {

@@ -4,10 +4,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
- * Vira Design System - Spacing, Radius, and Icon Size Tokens
+ * Vira Design System - Strict Spacing Scale & Radius Tokens
  * 
- * Enforces a strict geometric scale: 4, 8, 12, 16, 24, 32, 48.
- * Eliminates scattered arbitrary padding values.
+ * Scale: 4, 8, 12, 16, 24, 32, 48, 64 dp
+ * Eliminates arbitrary ad-hoc padding across all screens.
  */
 object ViraSpacing {
     val none: Dp = 0.dp
@@ -37,18 +37,24 @@ object Spacing {
 }
 
 /**
- * Vira Corner Radius Tokens
+ * Vira Corner Radius Scale
+ * 
+ * small controls / chips: 10-12dp
+ * buttons: 16dp
+ * cards: 22dp
+ * sheets: 28dp
+ * pills: 999dp
  */
 object ViraRadius {
-    val small: Dp = 8.dp
-    val medium: Dp = 14.dp
-    val large: Dp = 20.dp
-    val sheet: Dp = 24.dp
+    val small: Dp = 10.dp
+    val medium: Dp = 16.dp
+    val large: Dp = 22.dp
+    val sheet: Dp = 28.dp
     val pill: Dp = 999.dp
 }
 
 /**
- * Vira Icon Size Tokens
+ * Vira Icon Size Scale
  */
 object ViraIconSize {
     val small: Dp = 16.dp

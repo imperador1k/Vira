@@ -15,7 +15,12 @@ data class ViraExtraColors(
     val surfaceElevated: Color,
     val surfaceInteractive: Color,
     val divider: Color,
-    val cyanMuted: Color
+    val cyanMuted: Color,
+    val border: Color,
+    val cardBackground: Color,
+    val cardBorder: Color,
+    val warning: Color = ViraWarning,
+    val success: Color = ViraSuccess
 )
 
 val LocalViraExtraColors = staticCompositionLocalOf {
@@ -23,7 +28,12 @@ val LocalViraExtraColors = staticCompositionLocalOf {
         surfaceElevated = ViraSurfaceElevatedDark,
         surfaceInteractive = ViraSurfaceInteractiveDark,
         divider = ViraDividerDark,
-        cyanMuted = ViraCyanMutedDark
+        cyanMuted = ViraCyanMutedDark,
+        border = ViraBorderDark,
+        cardBackground = ViraSurfaceDark,
+        cardBorder = ViraBorderDark,
+        warning = ViraWarning,
+        success = ViraSuccess
     )
 }
 
@@ -40,13 +50,15 @@ private val DarkColorScheme = darkColorScheme(
     onSurfaceVariant = ViraOnSurfaceVariantDark,
     surfaceContainer = ViraSurfaceElevatedDark,
     surfaceContainerHigh = ViraSurfaceInteractiveDark,
-    outline = ViraDividerDark,
-    outlineVariant = ViraOutlineDark
+    outline = ViraBorderDark,
+    outlineVariant = ViraOutlineDark,
+    error = ViraError,
+    onError = Color.White
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = ViraCyanLight,
-    onPrimary = Color.White,
+    primary = ViraCyan,
+    onPrimary = Color(0xFF0C0E12),
     primaryContainer = ViraCyanMutedLight,
     onPrimaryContainer = ViraCyanLight,
     background = ViraBackgroundLight,
@@ -57,8 +69,10 @@ private val LightColorScheme = lightColorScheme(
     onSurfaceVariant = ViraOnSurfaceVariantLight,
     surfaceContainer = ViraSurfaceElevatedLight,
     surfaceContainerHigh = ViraSurfaceInteractiveLight,
-    outline = ViraDividerLight,
-    outlineVariant = ViraOutlineLight
+    outline = ViraBorderLight,
+    outlineVariant = ViraOutlineLight,
+    error = ViraError,
+    onError = Color.White
 )
 
 @Composable
@@ -72,14 +86,20 @@ fun ViraTheme(
             surfaceElevated = ViraSurfaceElevatedDark,
             surfaceInteractive = ViraSurfaceInteractiveDark,
             divider = ViraDividerDark,
-            cyanMuted = ViraCyanMutedDark
+            cyanMuted = ViraCyanMutedDark,
+            border = ViraBorderDark,
+            cardBackground = ViraSurfaceDark,
+            cardBorder = ViraBorderDark
         )
     } else {
         ViraExtraColors(
             surfaceElevated = ViraSurfaceElevatedLight,
             surfaceInteractive = ViraSurfaceInteractiveLight,
             divider = ViraDividerLight,
-            cyanMuted = ViraCyanMutedLight
+            cyanMuted = ViraCyanMutedLight,
+            border = ViraBorderLight,
+            cardBackground = ViraSurfaceLight,
+            cardBorder = ViraBorderLight
         )
     }
 
@@ -99,6 +119,4 @@ fun ViraTheme(
 fun MyApplicationTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
-) {
-    ViraTheme(darkTheme = darkTheme, content = content)
-}
+) = ViraTheme(darkTheme = darkTheme, content = content)

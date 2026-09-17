@@ -109,6 +109,15 @@ class SupabaseAuthRepository(
         }
     }
 
+    override suspend fun sendPasswordResetEmail(email: String): Result<Unit> {
+        return try {
+            client.auth.resetPasswordForEmail(email)
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     override fun getCurrentUserId(): String? = client.auth.currentUserOrNull()?.id
 
     override fun getCurrentEmail(): String? = client.auth.currentUserOrNull()?.email

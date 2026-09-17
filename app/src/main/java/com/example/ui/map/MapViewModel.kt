@@ -3,10 +3,12 @@ package com.example.ui.map
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.example.data.local.CollectionEntryEntity
 import com.example.data.local.CollectionSpotEntity
 import com.example.data.local.ReturnPointEntity
 import com.example.domain.location.LocationResult
 import com.example.domain.location.LocationSource
+import com.example.repository.CollectionRepository
 import com.example.repository.LocationRepository
 import com.example.repository.ReturnPointRepository
 import com.example.repository.SpotRepository
@@ -18,10 +20,12 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.maplibre.compose.camera.CameraPosition
 import org.maplibre.spatialk.geojson.Position
+import java.util.Locale
 
 class MapViewModel(
     private val spotRepository: SpotRepository,
     private val returnPointRepository: ReturnPointRepository,
+    private val collectionRepository: CollectionRepository,
     private val locationRepository: LocationRepository,
     private val networkMonitor: com.example.util.NetworkMonitor
 ) : ViewModel() {
@@ -47,14 +51,46 @@ class MapViewModel(
         viewModelScope.launch {
             combine(
                 spotRepository.getAllSpots(),
-                returnPointRepository.getAllReturnPoints()
-            ) { spots, returnPoints ->
-                Pair(spots, returnPoints)
-            }.collect { (spots, returnPoints) ->
+                returnPointRepository.getAllReturnPoints(),
+                collectionRepository.getAllCollections()
+            ) { spots, returnPoints, collections ->
+                Triple(spots, returnPoints, collections)
+            }.collect { (spots, returnPoints, collections) ->
+                // Aggregates for each spot
+                val spotAggregates = spots.associate { spot ->
+                    val spotCols = collections.filter { it.collectionSpotId == spot.id }
+                    spot.id to SpotAggregateInfo(
+                        spotId = spot.id,
+                        spotName = spot.name,
+                        totalContainers = spotCols.sumOf { it.containerCount },
+                        collectionCount = spotCols.size,
+                        lastCollectedTimestamp = spotCols.maxOfOrNull { it.timestamp }
+                    )
+                }
+
+                // Standalone geolocated collection events (no spot or unknown spot)
+                val standalone = collections.filter { it.latitude != null && it.longitude != null && it.collectionSpotId == null }
+                val personalMarkers = standalone.groupBy { col ->
+                    String.format(Locale.US, "%.4f,%.4f", col.latitude, col.longitude)
+                }.map { (key, group) ->
+                    val latest = group.maxByOrNull { it.timestamp } ?: group.first()
+                    PersonalCollectionMarker(
+                        id = key,
+                        latitude = latest.latitude!!,
+                        longitude = latest.longitude!!,
+                        totalContainers = group.sumOf { it.containerCount },
+                        latestCollection = latest,
+                        collections = group.sortedByDescending { it.timestamp }
+                    )
+                }
+
                 _uiState.update { current ->
                     current.copy(
                         spots = spots,
-                        returnPoints = returnPoints
+                        returnPoints = returnPoints,
+                        collections = collections,
+                        spotAggregates = spotAggregates,
+                        personalCollectionMarkers = personalMarkers
                     )
                 }
             }
@@ -199,7 +235,8 @@ class MapViewModel(
         _uiState.update {
             it.copy(
                 selectedSpot = spot,
-                selectedReturnPoint = null
+                selectedReturnPoint = null,
+                selectedCollection = null
             )
         }
     }
@@ -208,7 +245,46 @@ class MapViewModel(
         _uiState.update {
             it.copy(
                 selectedReturnPoint = point,
-                selectedSpot = null
+                selectedSpot = null,
+                selectedCollection = null
+            )
+        }
+    }
+
+    fun selectCollection(collection: CollectionEntryEntity?) {
+        _uiState.update {
+            it.copy(
+                selectedCollection = collection,
+                selectedSpot = null,
+                selectedReturnPoint = null
+            )
+        }
+    }
+
+    fun focusOnCollection(latitude: Double, longitude: Double, collectionId: Int?) {
+        val targetCol = if (collectionId != null) {
+            _uiState.value.collections.find { it.id == collectionId }
+        } else {
+            _uiState.value.collections.minByOrNull {
+                val dLat = (it.latitude ?: 0.0) - latitude
+                val dLng = (it.longitude ?: 0.0) - longitude
+                dLat * dLat + dLng * dLng
+            }
+        }
+        val pos = Position(longitude = longitude, latitude = latitude)
+        hasInitializedCamera = true
+        _uiState.update {
+            it.copy(
+                cameraPosition = CameraPosition(
+                    bearing = 0.0,
+                    target = pos,
+                    tilt = 0.0,
+                    zoom = 16.0
+                ),
+                cameraMoveTrigger = it.cameraMoveTrigger + 1,
+                selectedCollection = targetCol,
+                selectedSpot = null,
+                selectedReturnPoint = null
             )
         }
     }
@@ -242,6 +318,7 @@ class MapViewModel(
 class MapViewModelFactory(
     private val spotRepository: SpotRepository,
     private val returnPointRepository: ReturnPointRepository,
+    private val collectionRepository: CollectionRepository,
     private val locationRepository: LocationRepository,
     private val networkMonitor: com.example.util.NetworkMonitor
 ) : ViewModelProvider.Factory {
@@ -251,6 +328,7 @@ class MapViewModelFactory(
             return MapViewModel(
                 spotRepository,
                 returnPointRepository,
+                collectionRepository,
                 locationRepository,
                 networkMonitor
             ) as T

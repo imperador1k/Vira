@@ -127,102 +127,80 @@ fun ProgressScreen(
                     }
                 }
 
-                // OPEN LAYOUT METRICS (No giant enclosing box)
+                // 2x2 STAT CARDS GRID
                 item {
-                    Column(
+                    Row(
                         modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(ViraSpacing.space24)
+                        horizontalArrangement = Arrangement.spacedBy(ViraSpacing.space12)
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = FormatUtils.formatCurrency(uiState.potentialValueCents),
-                                    style = ViraTypography.MetricLarge,
-                                    color = MaterialTheme.colorScheme.onBackground
-                                )
-                                Text(
-                                    text = "POTENCIAL",
-                                    style = ViraTypography.SectionTitle,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = FormatUtils.formatCurrency(uiState.recoveredValueCents),
-                                    style = ViraTypography.MetricLarge,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                                Text(
-                                    text = "RECUPERADO",
-                                    style = ViraTypography.SectionTitle,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "${uiState.totalSessions}",
-                                    style = ViraTypography.MetricLarge,
-                                    color = MaterialTheme.colorScheme.onBackground
-                                )
-                                Text(
-                                    text = "SESSÕES",
-                                    style = ViraTypography.SectionTitle,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = String.format("%.1f", uiState.averagePerSession),
-                                    style = ViraTypography.MetricLarge,
-                                    color = MaterialTheme.colorScheme.onBackground
-                                )
-                                Text(
-                                    text = "MÉDIA / SESSÃO",
-                                    style = ViraTypography.SectionTitle,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
+                        com.example.ui.components.ViraStatCard(
+                            eyebrow = "POTENCIAL",
+                            value = FormatUtils.formatCurrency(uiState.potentialValueCents),
+                            subtitle = "Valor acumulado",
+                            modifier = Modifier.weight(1f)
+                        )
+                        com.example.ui.components.ViraStatCard(
+                            eyebrow = "RECUPERADO",
+                            value = FormatUtils.formatCurrency(uiState.recoveredValueCents),
+                            subtitle = "Valor em talão",
+                            badgeText = "Retoma",
+                            modifier = Modifier.weight(1f)
+                        )
                     }
-                    Spacer(modifier = Modifier.height(ViraSpacing.space32))
+                    Spacer(modifier = Modifier.height(ViraSpacing.space12))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(ViraSpacing.space12)
+                    ) {
+                        com.example.ui.components.ViraStatCard(
+                            eyebrow = "SESSÕES",
+                            value = "${uiState.totalSessions}",
+                            subtitle = "Total de recolhas",
+                            modifier = Modifier.weight(1f)
+                        )
+                        com.example.ui.components.ViraStatCard(
+                            eyebrow = "MÉDIA / SESSÃO",
+                            value = String.format("%.1f", uiState.averagePerSession),
+                            subtitle = "Embalagens por saída",
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(ViraSpacing.space24))
                 }
 
-                // TAXA DE DEVOLUÇÃO (Thin Progress)
+                // TAXA DE DEVOLUÇÃO CARD
                 item {
                     val returnPercent = (uiState.returnRate * 100).toInt()
-                    Column(modifier = Modifier.fillMaxWidth()) {
+                    ViraSurfaceCard(modifier = Modifier.fillMaxWidth()) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "Taxa de devolução",
-                                style = ViraTypography.Body,
-                                color = MaterialTheme.colorScheme.onSurface
+                                text = "TAXA DE DEVOLUÇÃO",
+                                style = ViraTypography.Eyebrow,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
                                 text = "$returnPercent%",
-                                style = ViraTypography.MetricMedium,
+                                style = ViraTypography.ButtonLabel,
                                 color = MaterialTheme.colorScheme.primary
                             )
                         }
-                        Spacer(modifier = Modifier.height(ViraSpacing.space8))
+                        Spacer(modifier = Modifier.height(ViraSpacing.space12))
                         ViraProgressBar(
                             progress = uiState.returnRate,
-                            height = 4.dp
+                            height = 8.dp
+                        )
+                        Spacer(modifier = Modifier.height(ViraSpacing.space12))
+                        Text(
+                            text = "Acompanha o retorno das embalagens aos pontos de devolução oficiais.",
+                            style = ViraTypography.Caption,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Spacer(modifier = Modifier.height(ViraSpacing.space32))
+                    Spacer(modifier = Modifier.height(ViraSpacing.space24))
                 }
 
                 // MELHOR SPOT

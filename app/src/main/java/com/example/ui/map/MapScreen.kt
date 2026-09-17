@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Directions
 import androidx.compose.material.icons.filled.GpsFixed
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Place
@@ -100,12 +101,24 @@ import org.maplibre.compose.overlay.ZoomButtons
 import org.maplibre.compose.style.BaseStyle
 import org.maplibre.spatialk.geojson.Position
 
+import androidx.compose.material.icons.filled.History
+import com.example.data.local.CollectionEntryEntity
+import com.example.util.FormatUtils
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
 @OptIn(ExperimentalPermissionsApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun MapScreen(
     onNavigateToSpot: (Int) -> Unit = {},
     initialMapMode: MapMode = MapMode.Explore,
-    onLocationPicked: ((Double, Double) -> Unit)? = null
+    onLocationPicked: ((Double, Double) -> Unit)? = null,
+    onNavigateToHistory: () -> Unit = {},
+    focusLatitude: Double? = null,
+    focusLongitude: Double? = null,
+    focusCollectionId: Int? = null,
+    onClearFocus: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val appContainer = (context.applicationContext as ViraApp).container
@@ -114,6 +127,7 @@ fun MapScreen(
         factory = MapViewModelFactory(
             spotRepository = appContainer.spotRepository,
             returnPointRepository = appContainer.returnPointRepository,
+            collectionRepository = appContainer.collectionRepository,
             locationRepository = appContainer.locationRepository,
             networkMonitor = appContainer.networkMonitor
         )
@@ -167,6 +181,14 @@ fun MapScreen(
     LaunchedEffect(uiState.cameraPosition, uiState.cameraMoveTrigger) {
         if (uiState.cameraMoveTrigger > 0L) {
             mapState.animateCameraPosition(uiState.cameraPosition)
+        }
+    }
+
+    // Sync external focus on a collection (e.g. from History)
+    LaunchedEffect(focusLatitude, focusLongitude, focusCollectionId) {
+        if (focusLatitude != null && focusLongitude != null) {
+            viewModel.focusOnCollection(focusLatitude, focusLongitude, focusCollectionId)
+            onClearFocus()
         }
     }
 
@@ -225,17 +247,29 @@ fun MapScreen(
                     Spacer(modifier = Modifier.height(ViraSpacing.space12))
                 }
 
-                items(filteredSpots) { spot ->
-                    ViraSpotRow(
-                        name = spot.name,
-                        totalContainers = spot.lifetimeContainers,
-                        averagePerVisit = spot.averageContainersPerVisit,
-                        lastVisitText = if (spot.lastVisitedAt != null) "recente" else "sem registo",
-                        onClick = {
-                            viewModel.selectSpot(spot)
-                            isListView = false
+                if (filteredSpots.isEmpty()) {
+                    item {
+                        ViraSurfaceCard(modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                text = "Ainda não tens locais guardados.",
+                                style = ViraTypography.BodySecondary,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
-                    )
+                    }
+                } else {
+                    items(filteredSpots) { spot ->
+                        ViraSpotRow(
+                            name = spot.name,
+                            totalContainers = spot.lifetimeContainers,
+                            averagePerVisit = spot.averageContainersPerVisit,
+                            lastVisitText = if (spot.lastVisitedAt != null) "recente" else "sem registo",
+                            onClick = {
+                                viewModel.selectSpot(spot)
+                                isListView = false
+                            }
+                        )
+                    }
                 }
 
                 if (filteredReturnPoints.isNotEmpty()) {
@@ -440,6 +474,64 @@ fun MapScreen(
                                 }
                             }
                         }
+
+                        // 4. Personal Collection Event Markers (Emerald Green)
+                        if (uiState.activeFilter == MapFilter.All || uiState.activeFilter == MapFilter.Collections) {
+                            uiState.personalCollectionMarkers.forEach { marker ->
+                                val isSelected = uiState.selectedCollection?.id == marker.latestCollection.id
+                                val position = Position(longitude = marker.longitude, latitude = marker.latitude)
+
+                                Box(
+                                    modifier = Modifier
+                                        .placedAt(position = position, alignment = Alignment.Center)
+                                        .clickable { viewModel.selectCollection(marker.latestCollection) }
+                                ) {
+                                    if (isSelected) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(34.dp)
+                                                .clip(CircleShape)
+                                                .background(Color(0xFF10B981).copy(alpha = 0.35f)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Surface(
+                                                shape = CircleShape,
+                                                color = Color(0xFF10B981),
+                                                border = BorderStroke(2.dp, Color.White),
+                                                shadowElevation = 6.dp,
+                                                modifier = Modifier.size(24.dp)
+                                            ) {
+                                                Box(contentAlignment = Alignment.Center) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Recycling,
+                                                        contentDescription = "Recolha pessoal",
+                                                        tint = Color.White,
+                                                        modifier = Modifier.size(14.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        Surface(
+                                            shape = CircleShape,
+                                            color = Color(0xFF10B981),
+                                            border = BorderStroke(1.5.dp, Color.White),
+                                            shadowElevation = 4.dp,
+                                            modifier = Modifier.size(22.dp)
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Recycling,
+                                                    contentDescription = "Recolha pessoal",
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(13.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -512,9 +604,8 @@ fun MapScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .shadow(8.dp, RoundedCornerShape(ViraRadius.large))
                                 .clip(RoundedCornerShape(ViraRadius.large))
-                                .background(LocalViraExtraColors.current.surfaceElevated)
+                                .background(LocalViraExtraColors.current.cardBackground)
                                 .padding(horizontal = ViraSpacing.space16, vertical = ViraSpacing.space8),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -560,20 +651,15 @@ fun MapScreen(
                         ) {
                             listOf(
                                 MapFilter.All to "Todos",
+                                MapFilter.Collections to "Recolhas",
                                 MapFilter.MySpots to "Meus spots",
                                 MapFilter.ReturnPoints to "Devolução"
                             ).forEach { (filter, label) ->
                                 val isSelected = uiState.activeFilter == filter
-                                FilterChip(
-                                    selected = isSelected,
-                                    onClick = { viewModel.setFilter(filter) },
-                                    label = { Text(label, style = ViraTypography.Caption) },
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = MaterialTheme.colorScheme.primary,
-                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
-                                        containerColor = LocalViraExtraColors.current.surfaceElevated.copy(alpha = 0.95f),
-                                        labelColor = MaterialTheme.colorScheme.onSurface
-                                    )
+                                com.example.ui.components.ViraChip(
+                                    text = label,
+                                    isSelected = isSelected,
+                                    onClick = { viewModel.setFilter(filter) }
                                 )
                             }
                         }
@@ -589,6 +675,42 @@ fun MapScreen(
                             ) {
                                 Text(
                                     text = "Pontos de devolução ainda não disponíveis nesta versão.",
+                                    style = ViraTypography.Caption,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = ViraSpacing.space16, vertical = ViraSpacing.space12)
+                                )
+                            }
+                        }
+
+                        // Personal Collections Empty Notice when Collections filter is active
+                        if (uiState.activeFilter == MapFilter.Collections && uiState.personalCollectionMarkers.isEmpty()) {
+                            Spacer(modifier = Modifier.height(ViraSpacing.space8))
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(ViraRadius.medium),
+                                color = LocalViraExtraColors.current.surfaceElevated.copy(alpha = 0.95f),
+                                shadowElevation = 2.dp
+                            ) {
+                                Text(
+                                    text = "As recolhas com localização vão aparecer aqui.",
+                                    style = ViraTypography.Caption,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = ViraSpacing.space16, vertical = ViraSpacing.space12)
+                                )
+                            }
+                        }
+
+                        // My Spots Empty Notice when MySpots filter is active
+                        if (uiState.activeFilter == MapFilter.MySpots && filteredSpots.isEmpty()) {
+                            Spacer(modifier = Modifier.height(ViraSpacing.space8))
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(ViraRadius.medium),
+                                color = LocalViraExtraColors.current.surfaceElevated.copy(alpha = 0.95f),
+                                shadowElevation = 2.dp
+                            ) {
+                                Text(
+                                    text = "Ainda não tens locais guardados.",
                                     style = ViraTypography.Caption,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(horizontal = ViraSpacing.space16, vertical = ViraSpacing.space12)
@@ -747,26 +869,137 @@ fun MapScreen(
                         }
                     }
 
+                    // COMPACT MAP LEGEND (Bottom Start)
+                    var isLegendExpanded by remember { mutableStateOf(false) }
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(
+                                bottom = if (uiState.selectedSpot != null || uiState.selectedReturnPoint != null || uiState.selectedCollection != null) 270.dp else 32.dp,
+                                start = ViraSpacing.space16
+                            )
+                    ) {
+                        Surface(
+                            onClick = { isLegendExpanded = !isLegendExpanded },
+                            shape = RoundedCornerShape(ViraRadius.medium),
+                            color = LocalViraExtraColors.current.surfaceElevated.copy(alpha = 0.95f),
+                            shadowElevation = 6.dp,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                        ) {
+                            Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.Info,
+                                        contentDescription = "Legenda do mapa",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Legenda",
+                                        style = ViraTypography.Caption,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+
+                                if (isLegendExpanded) {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    // 1. Current location
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(12.dp)
+                                                .clip(CircleShape)
+                                                .background(Color(0xFF00D1B2))
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Posição atual", style = ViraTypography.Caption)
+                                    }
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    // 2. Personal collection
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(12.dp)
+                                                .clip(CircleShape)
+                                                .background(Color(0xFF10B981)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Recycling,
+                                                contentDescription = null,
+                                                tint = Color.White,
+                                                modifier = Modifier.size(8.dp)
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Recolha pessoal", style = ViraTypography.Caption)
+                                    }
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    // 3. Saved spot
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(12.dp)
+                                                .clip(CircleShape)
+                                                .background(Color(0xFF00D1B2).copy(alpha = 0.5f)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(6.dp)
+                                                    .clip(CircleShape)
+                                                    .background(Color(0xFF00D1B2))
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Spot guardado", style = ViraTypography.Caption)
+                                    }
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    // 4. Return point
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(12.dp)
+                                                .clip(RoundedCornerShape(3.dp))
+                                                .background(Color(0xFFF59E0B)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Place,
+                                                contentDescription = null,
+                                                tint = Color.White,
+                                                modifier = Modifier.size(8.dp)
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Ponto de devolução", style = ViraTypography.Caption)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // FLOATING GPS BUTTON WITH LOADING STATE
                     Box(
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
                             .padding(
-                                bottom = if (uiState.selectedSpot != null || uiState.selectedReturnPoint != null) 270.dp else 32.dp,
+                                bottom = if (uiState.selectedSpot != null || uiState.selectedReturnPoint != null || uiState.selectedCollection != null) 270.dp else 32.dp,
                                 end = ViraSpacing.space16
                             )
                     ) {
                         Surface(
                             onClick = { requestGpsFix() },
                             shape = CircleShape,
-                            color = LocalViraExtraColors.current.surfaceElevated,
-                            shadowElevation = 8.dp,
+                            color = LocalViraExtraColors.current.cardBackground,
+                            border = BorderStroke(1.dp, LocalViraExtraColors.current.cardBorder),
                             modifier = Modifier.size(52.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 if (uiState.isLocating) {
                                     CircularProgressIndicator(
-                                        modifier = Modifier.size(24.dp),
+                                        modifier = Modifier.size(22.dp),
                                         color = MaterialTheme.colorScheme.primary,
                                         strokeWidth = 2.dp
                                     )
@@ -776,6 +1009,154 @@ fun MapScreen(
                                         contentDescription = "A minha localização",
                                         tint = if (uiState.userLocation != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                                     )
+                                }
+                            }
+                        }
+                    }
+
+                    // SLIDING PARTIAL BOTTOM SHEET: Personal Collection Selected
+                    AnimatedVisibility(
+                        visible = uiState.selectedCollection != null,
+                        modifier = Modifier.align(Alignment.BottomCenter),
+                        enter = slideInVertically { it },
+                        exit = slideOutVertically { it }
+                    ) {
+                        uiState.selectedCollection?.let { col ->
+                            ViraSurfaceCard(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(ViraSpacing.space16)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Surface(
+                                        shape = RoundedCornerShape(ViraRadius.small),
+                                        color = Color(0xFF0F2E28)
+                                    ) {
+                                        Text(
+                                            text = "RECOLHA PESSOAL",
+                                            style = ViraTypography.Caption,
+                                            color = Color(0xFF10B981),
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        )
+                                    }
+                                    IconButton(onClick = { viewModel.selectCollection(null) }, modifier = Modifier.size(32.dp)) {
+                                        Icon(Icons.Default.Close, contentDescription = "Fechar")
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(ViraSpacing.space8))
+                                val countText = if (col.containerCount == 1) "1 embalagem" else "${col.containerCount} embalagens"
+                                val valueText = "+${FormatUtils.formatCurrency(col.estimatedValueCents)}"
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.Bottom
+                                ) {
+                                    Text(text = countText, style = ViraTypography.MetricLarge)
+                                    Text(
+                                        text = valueText,
+                                        style = ViraTypography.MetricMedium,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(ViraSpacing.space4))
+                                val locale = Locale.forLanguageTag("pt-PT")
+                                val dateTimeFormat = remember { SimpleDateFormat("d 'de' MMMM yyyy, HH:mm", locale) }
+                                Text(
+                                    text = dateTimeFormat.format(Date(col.timestamp)),
+                                    style = ViraTypography.Caption,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+
+                                val spotName = col.collectionSpotId?.let { spotId ->
+                                    uiState.spots.find { it.id == spotId }?.name
+                                }
+                                val locationLabel = when {
+                                    spotName != null -> spotName
+                                    col.latitude != null && col.longitude != null -> "Localização guardada"
+                                    else -> "Sem localização"
+                                }
+                                Spacer(modifier = Modifier.height(ViraSpacing.space8))
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.Place,
+                                        contentDescription = null,
+                                        tint = Color(0xFF10B981),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = locationLabel,
+                                        style = ViraTypography.BodySecondary,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    if (col.latitude != null && col.longitude != null) {
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "(${String.format(Locale.US, "%.4f, %.4f", col.latitude, col.longitude)})",
+                                            style = ViraTypography.Caption,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+
+                                if (!col.note.isNullOrBlank()) {
+                                    Spacer(modifier = Modifier.height(ViraSpacing.space8))
+                                    Surface(
+                                        shape = RoundedCornerShape(ViraRadius.small),
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(
+                                            text = "\"${col.note}\"",
+                                            style = ViraTypography.Caption,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(ViraSpacing.space16))
+
+                                ViraPrimaryButton(
+                                    text = "+ Registar aqui novamente",
+                                    onClick = {
+                                        customPickedPos = if (col.latitude != null && col.longitude != null) {
+                                            Pair(col.latitude, col.longitude)
+                                        } else null
+                                        showCollectionSheet = true
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+
+                                Spacer(modifier = Modifier.height(ViraSpacing.space8))
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    TextButton(onClick = { onNavigateToHistory() }) {
+                                        Icon(Icons.Default.History, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Ver no histórico", style = ViraTypography.ButtonLabel, color = MaterialTheme.colorScheme.primary)
+                                    }
+                                    if (col.latitude != null && col.longitude != null) {
+                                        TextButton(
+                                            onClick = {
+                                                val gmmIntentUri = Uri.parse("geo:${col.latitude},${col.longitude}?q=${col.latitude},${col.longitude}(${Uri.encode("Recolha")})")
+                                                val mapIntent = Intent(Intent.ACTION_VIEW, gmmIntentUri)
+                                                context.startActivity(mapIntent)
+                                            }
+                                        ) {
+                                            Icon(Icons.Default.Directions, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("Como chegar", style = ViraTypography.ButtonLabel)
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -793,7 +1174,6 @@ fun MapScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(ViraSpacing.space16)
-                                    .shadow(12.dp, RoundedCornerShape(ViraRadius.large))
                             ) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -812,8 +1192,14 @@ fun MapScreen(
                                     color = MaterialTheme.colorScheme.primary
                                 )
                                 Spacer(modifier = Modifier.height(ViraSpacing.space4))
+                                val agg = uiState.spotAggregates[spot.id]
+                                val aggText = if (agg != null && agg.collectionCount > 0) {
+                                    "${agg.totalContainers} recolhidas em ${agg.collectionCount} visitas"
+                                } else {
+                                    "${spot.lifetimeContainers} recolhidas · ${spot.totalVisits} visitas"
+                                }
                                 Text(
-                                    text = "${spot.lifetimeContainers} recolhidas · ${spot.totalVisits} visitas",
+                                    text = aggText,
                                     style = ViraTypography.Caption,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -864,7 +1250,6 @@ fun MapScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(ViraSpacing.space16)
-                                    .shadow(12.dp, RoundedCornerShape(ViraRadius.large))
                             ) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -923,7 +1308,7 @@ fun MapScreen(
             CollectionBottomSheet(
                 sheetState = collectionSheetState,
                 spots = uiState.spots,
-                initialSpotId = uiState.selectedSpot?.id,
+                initialSpotId = uiState.selectedCollection?.collectionSpotId ?: uiState.selectedSpot?.id,
                 pickedCoordinate = customPickedPos,
                 onPickOnMap = {
                     scope.launch { collectionSheetState.hide() }.invokeOnCompletion {
@@ -936,17 +1321,27 @@ fun MapScreen(
                         showCollectionSheet = false
                     }
                 },
-                onSave = { count, spotId ->
+                onSave = { count, spotId, note ->
                     scope.launch {
+                        val entryLat = customPickedPos?.first
+                            ?: uiState.selectedCollection?.latitude
+                            ?: uiState.selectedSpot?.latitude
+                        val entryLng = customPickedPos?.second
+                            ?: uiState.selectedCollection?.longitude
+                            ?: uiState.selectedSpot?.longitude
+                        val targetSpotId = spotId
+                            ?: uiState.selectedCollection?.collectionSpotId
+                            ?: uiState.selectedSpot?.id
+
                         appContainer.collectionRepository.insertCollection(
-                            com.example.data.local.CollectionEntryEntity(
+                            CollectionEntryEntity(
                                 containerCount = count,
                                 timestamp = System.currentTimeMillis(),
                                 estimatedValueCents = count * com.example.util.Constants.DEPOSIT_VALUE_CENTS,
-                                collectionSpotId = spotId ?: uiState.selectedSpot?.id,
-                                note = null,
-                                latitude = customPickedPos?.first ?: uiState.selectedSpot?.latitude,
-                                longitude = customPickedPos?.second ?: uiState.selectedSpot?.longitude
+                                collectionSpotId = targetSpotId,
+                                note = note?.takeIf { it.isNotBlank() },
+                                latitude = entryLat,
+                                longitude = entryLng
                             )
                         )
                         customPickedPos = null

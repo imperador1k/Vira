@@ -6,6 +6,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -30,6 +34,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -45,6 +50,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.data.local.CollectionSpotEntity
 import com.example.ui.components.ViraPrimaryButton
 import com.example.ui.theme.LocalViraExtraColors
@@ -61,16 +67,20 @@ fun CollectionBottomSheet(
     spots: List<CollectionSpotEntity>,
     initialCount: Int = 1,
     initialSpotId: Int? = null,
+    initialNote: String? = null,
     onQuantityChange: ((Int) -> Unit)? = null,
+    onNoteChange: ((String) -> Unit)? = null,
     onDismiss: () -> Unit,
-    onSave: (count: Int, spotId: Int?) -> Unit,
+    onSave: (count: Int, spotId: Int?, note: String?) -> Unit,
     onPickOnMap: (() -> Unit)? = null,
     onUseCurrentLocation: (() -> Unit)? = null,
     pickedCoordinate: Pair<Double, Double>? = null
 ) {
     var count by remember(initialCount) { mutableIntStateOf(initialCount) }
     var selectedSpotId by remember(initialSpotId) { mutableStateOf<Int?>(initialSpotId) }
+    var note by remember(initialNote) { mutableStateOf(initialNote ?: "") }
     var isSelectingLocation by remember { mutableStateOf(false) }
+    var showNoteInput by remember(initialNote) { mutableStateOf(!initialNote.isNullOrBlank()) }
     val haptic = LocalHapticFeedback.current
 
     fun updateCount(newCount: Int) {
@@ -85,24 +95,46 @@ fun CollectionBottomSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = LocalViraExtraColors.current.surfaceElevated,
+        containerColor = LocalViraExtraColors.current.cardBackground,
+        shape = RoundedCornerShape(topStart = ViraRadius.sheet, topEnd = ViraRadius.sheet),
         dragHandle = null
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .imePadding()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = ViraSpacing.space24)
-                .padding(top = ViraSpacing.space24, bottom = ViraSpacing.space32)
+                .padding(top = ViraSpacing.space16, bottom = ViraSpacing.space32)
         ) {
+            // Drag Handle
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .size(width = 36.dp, height = 4.dp)
+                    .clip(RoundedCornerShape(ViraRadius.pill))
+                    .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f))
+            )
+
+            Spacer(modifier = Modifier.height(ViraSpacing.space16))
+
             // Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(text = "Nova recolha", style = ViraTypography.MetricMedium)
+                Text(
+                    text = "Registar recolha",
+                    style = ViraTypography.SectionTitle,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
                 IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Default.Close, contentDescription = "Fechar")
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Fechar",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
 
@@ -116,93 +148,96 @@ fun CollectionBottomSheet(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(52.dp)
+                        .size(56.dp)
                         .clip(CircleShape)
                         .background(LocalViraExtraColors.current.surfaceInteractive)
                         .clickable {
                             if (count > 1) {
                                 updateCount(count - 1)
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             }
                         },
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Default.Remove, contentDescription = "Diminuir", tint = MaterialTheme.colorScheme.onSurface)
+                    Icon(
+                        imageVector = Icons.Default.Remove,
+                        contentDescription = "Diminuir",
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
                 }
 
                 Spacer(modifier = Modifier.width(ViraSpacing.space32))
 
                 Text(
                     text = "$count",
-                    style = ViraTypography.HeroNumber,
-                    color = MaterialTheme.colorScheme.onSurface
+                    style = ViraTypography.DisplayLarge,
+                    color = MaterialTheme.colorScheme.onBackground
                 )
 
                 Spacer(modifier = Modifier.width(ViraSpacing.space32))
 
                 Box(
                     modifier = Modifier
-                        .size(52.dp)
+                        .size(56.dp)
                         .clip(CircleShape)
                         .background(LocalViraExtraColors.current.surfaceInteractive)
                         .clickable {
                             updateCount(count + 1)
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         },
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = "Aumentar", tint = MaterialTheme.colorScheme.onSurface)
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Aumentar",
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
                 }
             }
 
-            // Quick increments
+            // Quick increments row with ViraQuantityPill
             Spacer(modifier = Modifier.height(ViraSpacing.space16))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(ViraSpacing.space8, Alignment.CenterHorizontally)
             ) {
                 listOf(1, 5, 10, 25).forEach { inc ->
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(ViraRadius.small))
-                            .background(LocalViraExtraColors.current.surfaceInteractive)
-                            .clickable {
-                                updateCount(count + inc)
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            }
-                            .padding(horizontal = ViraSpacing.space16, vertical = ViraSpacing.space8)
-                    ) {
-                        Text(text = "+$inc", style = ViraTypography.ButtonLabel, color = MaterialTheme.colorScheme.primary)
-                    }
+                    com.example.ui.components.ViraQuantityPill(
+                        text = "+$inc",
+                        onClick = {
+                            updateCount(count + inc)
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
                 }
             }
 
             // Potential financial value
-            Spacer(modifier = Modifier.height(ViraSpacing.space12))
+            Spacer(modifier = Modifier.height(ViraSpacing.space16))
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
                     text = FormatUtils.formatCurrency(count * DEPOSIT_VALUE_CENTS),
-                    style = ViraTypography.MetricMedium,
+                    style = ViraTypography.DisplayMedium.copy(fontSize = 24.sp),
                     color = MaterialTheme.colorScheme.primary
                 )
                 Text(
-                    text = "valor potencial",
+                    text = "valor potencial estimado",
                     style = ViraTypography.Caption,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
 
             Spacer(modifier = Modifier.height(ViraSpacing.space24))
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+            HorizontalDivider(color = LocalViraExtraColors.current.border)
             Spacer(modifier = Modifier.height(ViraSpacing.space16))
 
             // LOCATION EXPERIENCE
             Text(
                 text = "LOCAL",
-                style = ViraTypography.SectionTitle,
+                style = ViraTypography.Eyebrow,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(modifier = Modifier.height(ViraSpacing.space8))
@@ -212,7 +247,7 @@ fun CollectionBottomSheet(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     val locationTitle = when {
                         selectedSpot != null -> selectedSpot.name
                         pickedCoordinate != null -> "Localização guardada"
@@ -224,7 +259,11 @@ fun CollectionBottomSheet(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     if (selectedSpot?.address != null) {
-                        Text(text = selectedSpot.address, style = ViraTypography.Caption, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            text = selectedSpot.address,
+                            style = ViraTypography.Caption,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     } else if (pickedCoordinate != null) {
                         Text(
                             text = String.format(java.util.Locale.US, "%.4f, %.4f", pickedCoordinate.first, pickedCoordinate.second),
@@ -323,14 +362,39 @@ fun CollectionBottomSheet(
                 }
             }
 
-            Spacer(modifier = Modifier.height(ViraSpacing.space24))
+            Spacer(modifier = Modifier.height(ViraSpacing.space16))
 
-            // PRIMARY ACTION WITH DYNAMIC PORTUGUESE GRAMMAR
-            val ctaText = if (count == 1) "Guardar 1 embalagem" else "Guardar $count embalagens"
-            ViraPrimaryButton(
-                text = ctaText,
+            // OPTIONAL NOTE FIELD
+            if (!showNoteInput) {
+                TextButton(
+                    onClick = { showNoteInput = true },
+                    contentPadding = PaddingValues(0.dp)
+                ) {
+                    Text(
+                        text = "+ Adicionar nota (opcional)",
+                        style = ViraTypography.Caption,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            } else {
+                com.example.ui.components.ViraTextField(
+                    value = note,
+                    onValueChange = {
+                        note = it
+                        onNoteChange?.invoke(it)
+                    },
+                    label = "Nota (opcional)",
+                    placeholder = "ex: junto à entrada, ecoponto",
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            // HERO ACTION: "Guardar recolha"
+            com.example.ui.components.ViraHeroButton(
+                text = "Guardar recolha",
+                trailingText = "${count}x · ${FormatUtils.formatCurrency(count * DEPOSIT_VALUE_CENTS)}",
                 onClick = {
-                    onSave(count, selectedSpotId)
+                    onSave(count, selectedSpotId, note.trim().ifEmpty { null })
                 },
                 modifier = Modifier.fillMaxWidth()
             )

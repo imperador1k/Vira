@@ -18,15 +18,15 @@ enum class TopLevelDestination(
         titleTextId = "Início",
         route = HomeRoute
     ),
-    PROGRESS(
-        icon = Icons.Default.BarChart,
-        titleTextId = "Progresso",
-        route = ProgressRoute
-    ),
     MAP(
         icon = Icons.Default.Map,
         titleTextId = "Mapa",
         route = MapRootRoute
+    ),
+    PROGRESS(
+        icon = Icons.Default.BarChart,
+        titleTextId = "Progresso",
+        route = ProgressRoute
     ),
     HISTORY(
         icon = Icons.Default.History,

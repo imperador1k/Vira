@@ -44,6 +44,17 @@ class CollectionRepository(
         }
     }
 
+    suspend fun updateCollection(id: Int, newCount: Int, newNote: String?) {
+        val existing = collectionDao.getCollectionById(id).firstOrNull() ?: return
+        val updated = existing.copy(
+            containerCount = newCount,
+            estimatedValueCents = newCount * com.example.util.Constants.DEPOSIT_VALUE_CENTS,
+            note = newNote,
+            updatedAt = System.currentTimeMillis()
+        )
+        insertCollection(updated)
+    }
+
     suspend fun deleteCollectionById(id: Int) {
         database.withTransaction {
             val entry = collectionDao.getCollectionById(id).firstOrNull() ?: return@withTransaction

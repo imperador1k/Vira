@@ -44,21 +44,21 @@ fun ViraTimelineEntry(
         modifier = modifier
             .fillMaxWidth()
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(vertical = ViraSpacing.space4)
+            .padding(vertical = ViraSpacing.space8)
     ) {
         // Timeline spine (Dot + vertical connecting line)
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.width(20.dp)
         ) {
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(6.dp))
             Box(
                 modifier = Modifier
-                    .size(8.dp)
+                    .size(10.dp)
                     .clip(CircleShape)
                     .background(
                         if (isCollection) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant
+                        else LocalViraExtraColors.current.warning
                     )
             )
             if (!isLast) {
@@ -66,34 +66,16 @@ fun ViraTimelineEntry(
                 Box(
                     modifier = Modifier
                         .width(1.dp)
-                        .height(68.dp)
-                        .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                        .height(54.dp)
+                        .background(LocalViraExtraColors.current.border)
                 )
             }
         }
 
-        Spacer(modifier = Modifier.width(ViraSpacing.space12))
+        Spacer(modifier = Modifier.width(ViraSpacing.space16))
 
         // Content
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = time,
-                style = ViraTypography.Caption,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(ViraSpacing.space4))
-            Text(
-                text = category,
-                style = ViraTypography.SectionTitle,
-                color = if (isCollection) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(ViraSpacing.space4))
-            Text(
-                text = locationName,
-                style = ViraTypography.ButtonLabel,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.height(ViraSpacing.space4))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -101,16 +83,33 @@ fun ViraTimelineEntry(
             ) {
                 Text(
                     text = metricText,
-                    style = ViraTypography.BodySecondary,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    style = ViraTypography.MetricMedium,
+                    color = MaterialTheme.colorScheme.onBackground
                 )
                 Text(
                     text = valueText,
-                    style = ViraTypography.MetricMedium,
+                    style = ViraTypography.ButtonLabel,
                     color = if (isCollection) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                 )
             }
-            Spacer(modifier = Modifier.height(ViraSpacing.space16))
+            Spacer(modifier = Modifier.height(ViraSpacing.space4))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = locationName,
+                    style = ViraTypography.Caption,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = time,
+                    style = ViraTypography.Caption,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                )
+            }
+            Spacer(modifier = Modifier.height(ViraSpacing.space8))
         }
     }
 }

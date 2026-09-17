@@ -27,6 +27,13 @@ class ViraApp : Application(), Configuration.Provider {
         }
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
             container.userPreferencesRepository.incrementSessionCount()
+            container.backupPreferencesRepository.preferences.collect { prefs ->
+                try {
+                    com.example.data.backup.BackupWorker.scheduleOrCancel(this@ViraApp, prefs)
+                } catch (e: Exception) {
+                    Log.w("ViraApp", "Auto backup scheduling skipped: ${e.message}")
+                }
+            }
         }
     }
 }

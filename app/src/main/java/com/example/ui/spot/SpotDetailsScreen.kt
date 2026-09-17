@@ -240,7 +240,7 @@ fun SpotDetailsScreen(
                             showCollectionSheet = false
                         }
                     },
-                    onSave = { count, _ ->
+                    onSave = { count, _, note ->
                         scope.launch {
                             appContainer.collectionRepository.insertCollection(
                                 CollectionEntryEntity(
@@ -248,9 +248,9 @@ fun SpotDetailsScreen(
                                     timestamp = System.currentTimeMillis(),
                                     estimatedValueCents = count * DEPOSIT_VALUE_CENTS,
                                     collectionSpotId = s.id,
-                                    note = null,
-                                    latitude = null,
-                                    longitude = null
+                                    note = note?.takeIf { it.isNotBlank() },
+                                    latitude = s.latitude,
+                                    longitude = s.longitude
                                 )
                             )
                             sheetState.hide()

@@ -4,6 +4,7 @@ import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -24,6 +25,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -33,25 +35,35 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.GpsOff
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.LocationOff
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -65,20 +77,25 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ViraApp
 import com.example.data.auth.AuthState
+import com.example.data.backup.BackupFrequency
+import com.example.data.backup.BackupNetworkConstraint
+import com.example.data.backup.CloudBackupItem
+import com.example.data.backup.ViraBackupPayload
 import com.example.data.preferences.AppThemeMode
 import com.example.data.preferences.UserProfileData
 import com.example.domain.ContainerBalance
 import com.example.ui.components.AuthDialog
 import com.example.ui.components.ViraMetric
 import com.example.ui.components.ViraSectionHeader
+import com.example.ui.components.ViraStatCard
 import com.example.ui.components.ViraSurfaceCard
 import com.example.ui.components.ViraTopBar
 import com.example.ui.theme.LocalViraExtraColors
@@ -112,6 +129,9 @@ fun ProfileScreen() {
     val themeMode by appContainer.themePreferencesRepository.themeMode.collectAsStateWithLifecycle(
         initialValue = AppThemeMode.SYSTEM
     )
+    val backupPrefs by appContainer.backupPreferencesRepository.preferences.collectAsStateWithLifecycle(
+        initialValue = com.example.data.backup.BackupPreferences()
+    )
 
     val hasFineLocation = remember { appContainer.locationRepository.hasFineLocationPermission() }
     val hasCoarseLocation = remember { appContainer.locationRepository.hasCoarseLocationPermission() }
@@ -122,6 +142,13 @@ fun ProfileScreen() {
     var showAuthDialog by remember { mutableStateOf(false) }
     var showEditProfileDialog by remember { mutableStateOf(false) }
     var showPhotoOptionsDialog by remember { mutableStateOf(false) }
+    var showCloudBackupsDialog by remember { mutableStateOf(false) }
+    var cloudBackupsList by remember { mutableStateOf<List<CloudBackupItem>>(emptyList()) }
+    var isLoadingBackups by remember { mutableStateOf(false) }
+    var isBackingUpNow by remember { mutableStateOf(false) }
+
+    var pendingRestorePayload by remember { mutableStateOf<ViraBackupPayload?>(null) }
+    var showRestorePreviewDialog by remember { mutableStateOf(false) }
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -129,6 +156,38 @@ fun ProfileScreen() {
         if (uri != null) {
             scope.launch {
                 appContainer.userPreferencesRepository.saveAvatarFromUri(uri)
+            }
+        }
+    }
+
+    val exportBackupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { uri: Uri? ->
+        if (uri != null) {
+            scope.launch {
+                val payload = appContainer.backupManager.createSnapshotPayload()
+                val result = appContainer.backupManager.exportToUri(uri, payload)
+                if (result.isSuccess) {
+                    Toast.makeText(context, "Cópia exportada com sucesso!", Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(context, "Erro ao exportar cópia de segurança.", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    val importBackupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            scope.launch {
+                val result = appContainer.backupManager.importFromUri(uri)
+                result.onSuccess { payload ->
+                    pendingRestorePayload = payload
+                    showRestorePreviewDialog = true
+                }.onFailure { err ->
+                    Toast.makeText(context, err.message ?: "Ficheiro inválido", Toast.LENGTH_LONG).show()
+                }
             }
         }
     }
@@ -170,107 +229,169 @@ fun ProfileScreen() {
                 Spacer(modifier = Modifier.height(ViraSpacing.space16))
             }
 
-            // 1. PROFILE (PHOTO, NAME, USERNAME, CITY & EDIT)
+            // 1. PERFIL (IDENTITY / LOCAL MODE CARD)
             item {
-                ViraSurfaceCard(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // Avatar with overlay badge
-                        Box(
-                            modifier = Modifier
-                                .size(72.dp)
-                                .clip(CircleShape)
-                                .background(LocalViraExtraColors.current.surfaceInteractive)
-                                .clickable {
-                                    if (profilePrefs.avatarFilePath != null) {
-                                        showPhotoOptionsDialog = true
+                when (authState) {
+                    is AuthState.Authenticated -> {
+                        ViraSurfaceCard(modifier = Modifier.fillMaxWidth()) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(72.dp)
+                                        .clip(CircleShape)
+                                        .background(LocalViraExtraColors.current.surfaceInteractive)
+                                        .clickable {
+                                            if (profilePrefs.avatarFilePath != null) {
+                                                showPhotoOptionsDialog = true
+                                            } else {
+                                                photoPickerLauncher.launch(
+                                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                                )
+                                            }
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (avatarBitmap != null) {
+                                        Image(
+                                            bitmap = avatarBitmap,
+                                            contentDescription = "Foto de perfil",
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = ContentScale.Crop
+                                        )
                                     } else {
-                                        photoPickerLauncher.launch(
-                                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                        Icon(
+                                            imageVector = Icons.Default.Person,
+                                            contentDescription = "Foto de perfil padrão",
+                                            modifier = Modifier.size(ViraIconSize.large),
+                                            tint = MaterialTheme.colorScheme.primary
                                         )
                                     }
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (avatarBitmap != null) {
-                                Image(
-                                    bitmap = avatarBitmap,
-                                    contentDescription = "Foto de perfil",
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop
-                                )
-                            } else {
-                                Icon(
-                                    imageVector = Icons.Default.Person,
-                                    contentDescription = "Foto de perfil padrão",
-                                    modifier = Modifier.size(ViraIconSize.large),
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.BottomEnd)
+                                            .size(24.dp)
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.primary),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.CameraAlt,
+                                            contentDescription = "Alterar foto",
+                                            modifier = Modifier.size(14.dp),
+                                            tint = MaterialTheme.colorScheme.onPrimary
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.width(ViraSpacing.space16))
+
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = profilePrefs.displayName,
+                                        style = ViraTypography.MetricMedium,
+                                        color = MaterialTheme.colorScheme.onBackground
+                                    )
+                                    if (profilePrefs.username.isNotBlank()) {
+                                        Text(
+                                            text = "@${profilePrefs.username}",
+                                            style = ViraTypography.BodySecondary,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                    if (profilePrefs.city.isNotBlank()) {
+                                        Text(
+                                            text = profilePrefs.city,
+                                            style = ViraTypography.Caption,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(ViraSpacing.space4))
+                                    Text(
+                                        text = memberDateText,
+                                        style = ViraTypography.Caption,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                                    )
+                                }
+
+                                Surface(
+                                    shape = CircleShape,
+                                    color = LocalViraExtraColors.current.surfaceInteractive,
+                                    modifier = Modifier
+                                        .clip(CircleShape)
+                                        .clickable { showEditProfileDialog = true }
+                                ) {
+                                    Box(modifier = Modifier.padding(8.dp)) {
+                                        Icon(
+                                            imageVector = Icons.Default.Edit,
+                                            contentDescription = "Editar perfil",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(ViraIconSize.small)
+                                        )
+                                    }
+                                }
                             }
-                            // Subtle camera badge overlay
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.BottomEnd)
-                                    .size(24.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primary),
-                                contentAlignment = Alignment.Center
+                        }
+                    }
+                    else -> {
+                        // LOCAL MODE PROFILE CARD
+                        ViraSurfaceCard(modifier = Modifier.fillMaxWidth()) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.CameraAlt,
-                                    contentDescription = "Alterar foto",
-                                    modifier = Modifier.size(14.dp),
-                                    tint = MaterialTheme.colorScheme.onPrimary
-                                )
+                                Box(
+                                    modifier = Modifier
+                                        .size(64.dp)
+                                        .clip(CircleShape)
+                                        .background(LocalViraExtraColors.current.surfaceInteractive),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Person,
+                                        contentDescription = "Avatar Modo Local",
+                                        modifier = Modifier.size(ViraIconSize.large),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(ViraSpacing.space16))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Modo local",
+                                        style = ViraTypography.MetricMedium,
+                                        color = MaterialTheme.colorScheme.onBackground
+                                    )
+                                    Spacer(modifier = Modifier.height(ViraSpacing.space4))
+                                    Text(
+                                        text = "Os teus dados estão guardados neste dispositivo.",
+                                        style = ViraTypography.Caption,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
-                        }
-
-                        Spacer(modifier = Modifier.width(ViraSpacing.space16))
-
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = profilePrefs.displayName,
-                                style = ViraTypography.MetricMedium,
-                                color = MaterialTheme.colorScheme.onBackground
-                            )
-                            if (profilePrefs.username.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(ViraSpacing.space12))
+                            Surface(
+                                color = LocalViraExtraColors.current.surfaceInteractive,
+                                shape = RoundedCornerShape(ViraRadius.small),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
                                 Text(
-                                    text = "@${profilePrefs.username}",
-                                    style = ViraTypography.BodySecondary,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                            if (profilePrefs.city.isNotBlank()) {
-                                Text(
-                                    text = profilePrefs.city,
+                                    text = "Protege o teu histórico, personaliza o teu perfil e recupera os teus dados se mudares de telemóvel.",
                                     style = ViraTypography.Caption,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(ViraSpacing.space12)
                                 )
                             }
-                            Spacer(modifier = Modifier.height(ViraSpacing.space4))
-                            Text(
-                                text = memberDateText,
-                                style = ViraTypography.Caption,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
-                            )
-                        }
-
-                        Surface(
-                            shape = CircleShape,
-                            color = LocalViraExtraColors.current.surfaceInteractive,
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .clickable { showEditProfileDialog = true }
-                        ) {
-                            Box(modifier = Modifier.padding(8.dp)) {
-                                Icon(
-                                    imageVector = Icons.Default.Edit,
-                                    contentDescription = "Editar perfil",
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(ViraIconSize.small)
-                                )
+                            Spacer(modifier = Modifier.height(ViraSpacing.space12))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                TextButton(onClick = { showAuthDialog = true }) {
+                                    Text("Criar conta", style = ViraTypography.ButtonLabel, color = MaterialTheme.colorScheme.primary)
+                                }
                             }
                         }
                     }
@@ -278,36 +399,29 @@ fun ProfileScreen() {
                 Spacer(modifier = Modifier.height(ViraSpacing.space24))
             }
 
-            // 2. LIFETIME SUMMARY STATS
+            // TOTAL VITALÍCIO
             item {
-                ViraSurfaceCard(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = "TOTAL VITALÍCIO",
-                        style = ViraTypography.SectionTitle,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(ViraSpacing.space12)
+                ) {
+                    ViraStatCard(
+                        eyebrow = "Recolhidas",
+                        value = "${balance.containersCollected}",
+                        subtitle = "Total vitalício",
+                        modifier = Modifier.weight(1f)
                     )
-                    Spacer(modifier = Modifier.height(ViraSpacing.space16))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        ViraMetric(
-                            label = "Recolhidas",
-                            value = "${balance.containersCollected}",
-                            modifier = Modifier.weight(1f)
-                        )
-                        ViraMetric(
-                            label = "Recuperado",
-                            value = FormatUtils.formatCurrency(balance.recoveredValueCents),
-                            modifier = Modifier.weight(1f),
-                            valueColor = MaterialTheme.colorScheme.primary
-                        )
-                    }
+                    ViraStatCard(
+                        eyebrow = "Recuperado",
+                        value = FormatUtils.formatCurrency(balance.recoveredValueCents),
+                        subtitle = "Valor devolvido",
+                        modifier = Modifier.weight(1f)
+                    )
                 }
                 Spacer(modifier = Modifier.height(ViraSpacing.space24))
             }
 
-            // 3. ACCOUNT (LOCAL MODE VS AUTHENTICATED & BENEFITS)
+            // 2. CONTA (AUTHENTICATION & ACCOUNT STATE)
             item {
                 ViraSectionHeader(title = "Conta")
                 Spacer(modifier = Modifier.height(ViraSpacing.space8))
@@ -315,112 +429,68 @@ fun ProfileScreen() {
                     when (val currentAuth = authState) {
                         is AuthState.Authenticated -> {
                             Column(modifier = Modifier.fillMaxWidth()) {
+                                ProfileSettingsRow(
+                                    icon = Icons.Default.Person,
+                                    title = "Conta associada",
+                                    value = currentAuth.email
+                                )
+                                ProfileDivider()
+                                ProfileClickableRow(
+                                    icon = Icons.Default.Lock,
+                                    title = "Alterar palavra-passe",
+                                    subtitle = "Receber link no teu email",
+                                    onClick = {
+                                        scope.launch {
+                                            appContainer.authRepository.sendPasswordResetEmail(currentAuth.email)
+                                            Toast.makeText(context, "Email de recuperação enviado para ${currentAuth.email}", Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                )
+                                ProfileDivider()
+                                ProfileClickableRow(
+                                    icon = Icons.AutoMirrored.Filled.Logout,
+                                    title = "Terminar sessão",
+                                    subtitle = "Regressar ao Modo Local neste telemóvel",
+                                    isDestructive = true,
+                                    onClick = {
+                                        scope.launch {
+                                            appContainer.userPreferencesRepository.removeAvatar()
+                                            appContainer.userPreferencesRepository.saveProfile("Utilizador Vira", "", "")
+                                            appContainer.authRepository.signOut()
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                        else -> {
+                            Column(modifier = Modifier.fillMaxWidth()) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.CloudDone,
+                                        imageVector = Icons.Default.Security,
                                         contentDescription = null,
                                         tint = MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.size(ViraIconSize.medium)
                                     )
                                     Spacer(modifier = Modifier.width(ViraSpacing.space16))
                                     Column(modifier = Modifier.weight(1f)) {
+                                        Text(text = "Modo Local Ativo", style = ViraTypography.Body)
                                         Text(
-                                            text = "Backup na nuvem ativo (Beta)",
-                                            style = ViraTypography.Body
-                                        )
-                                        Text(
-                                            text = currentAuth.email,
-                                            style = ViraTypography.Caption,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                        val syncText = if (lastSyncTime != null) {
-                                            "Última sincronização: ${SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(lastSyncTime!!))}"
-                                        } else {
-                                            "Sincronização pendente"
-                                        }
-                                        Text(
-                                            text = syncText,
-                                            style = ViraTypography.Caption,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                                        )
-                                    }
-                                }
-                                Spacer(modifier = Modifier.height(ViraSpacing.space12))
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.End
-                                ) {
-                                    TextButton(
-                                        onClick = { scope.launch(Dispatchers.IO) { appContainer.syncManager.syncAll() } }
-                                    ) {
-                                        Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(ViraIconSize.small))
-                                        Spacer(modifier = Modifier.width(ViraSpacing.space4))
-                                        Text("Sincronizar agora")
-                                    }
-                                    Spacer(modifier = Modifier.width(ViraSpacing.space8))
-                                    TextButton(
-                                        onClick = { scope.launch { appContainer.authRepository.signOut() } }
-                                    ) {
-                                        Text("Terminar sessão", color = MaterialTheme.colorScheme.error)
-                                    }
-                                }
-                            }
-                        }
-                        else -> {
-                            Column(modifier = Modifier.fillMaxWidth()) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.Cloud,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(ViraIconSize.medium)
-                                    )
-                                    Spacer(modifier = Modifier.width(ViraSpacing.space16))
-                                    Column {
-                                        Text(
-                                            text = "Modo Local (Sem conta)",
-                                            style = ViraTypography.Body
-                                        )
-                                        Text(
-                                            text = "Os teus dados estão guardados em segurança no teu telemóvel.",
+                                            text = "Cria uma conta para proteger o teu progresso na nuvem.",
                                             style = ViraTypography.Caption,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
                                 }
-                                Spacer(modifier = Modifier.height(ViraSpacing.space12))
-
-                                // Clear explanation of account benefits (Section 9)
-                                Surface(
-                                    color = LocalViraExtraColors.current.surfaceInteractive,
-                                    shape = RoundedCornerShape(ViraRadius.small),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Column(modifier = Modifier.padding(ViraSpacing.space12)) {
-                                        Text(
-                                            text = "Benefícios de associar uma conta:",
-                                            style = ViraTypography.ButtonLabel,
-                                            color = MaterialTheme.colorScheme.onSurface
-                                        )
-                                        Spacer(modifier = Modifier.height(ViraSpacing.space4))
-                                        Text(
-                                            text = "• Sem conta: recolhas, histórico, mapa, progresso, spots pessoais e utilização 100% offline.\n• Com conta: backup na nuvem, recuperação de dados se trocares de telemóvel e sincronização multi-dispositivo.",
-                                            style = ViraTypography.Caption,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-
                                 Spacer(modifier = Modifier.height(ViraSpacing.space12))
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.End
                                 ) {
                                     TextButton(onClick = { showAuthDialog = true }) {
-                                        Text("Criar conta / Iniciar sessão")
+                                        Text("Entrar ou Criar conta", style = ViraTypography.ButtonLabel, color = MaterialTheme.colorScheme.primary)
                                     }
                                 }
                             }
@@ -430,7 +500,7 @@ fun ProfileScreen() {
                 Spacer(modifier = Modifier.height(ViraSpacing.space24))
             }
 
-            // 4. APPEARANCE (TEMA VISUAL)
+            // 3. APARÊNCIA (THEME)
             item {
                 ViraSectionHeader(title = "Aparência")
                 Spacer(modifier = Modifier.height(ViraSpacing.space8))
@@ -484,37 +554,243 @@ fun ProfileScreen() {
                 Spacer(modifier = Modifier.height(ViraSpacing.space24))
             }
 
-            // 5. DATA & BACKUP (STATUS)
+            // 4. DADOS E BACKUP
             item {
-                ViraSectionHeader(title = "Dados e Cópia de Segurança")
+                ViraSectionHeader(title = "Dados e Backup")
                 Spacer(modifier = Modifier.height(ViraSpacing.space8))
                 ViraSurfaceCard(modifier = Modifier.fillMaxWidth()) {
-                    ProfileSettingsRow(
-                        icon = Icons.Default.Storage,
-                        title = "Base de dados local",
-                        value = "SQLite Room (No telemóvel)"
-                    )
+                    // Continuous Sync Status
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = ViraSpacing.space8),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                            Icon(
+                                imageVector = if (authState is AuthState.Authenticated) Icons.Default.CloudDone else Icons.Default.Cloud,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(ViraIconSize.medium)
+                            )
+                            Spacer(modifier = Modifier.width(ViraSpacing.space16))
+                            Column {
+                                Text(text = "Sincronização em tempo real", style = ViraTypography.Body)
+                                val syncSubtitle = when {
+                                    authState !is AuthState.Authenticated -> "Apenas no dispositivo"
+                                    lastSyncTime != null -> "Atualizado às ${SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(lastSyncTime!!))}"
+                                    else -> "Sincronização pendente"
+                                }
+                                Text(text = syncSubtitle, style = ViraTypography.Caption, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                        if (authState is AuthState.Authenticated) {
+                            TextButton(
+                                onClick = { scope.launch(Dispatchers.IO) { appContainer.syncManager.syncAll() } }
+                            ) {
+                                Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Sincronizar")
+                            }
+                        }
+                    }
+
                     ProfileDivider()
-                    ProfileSettingsRow(
-                        icon = if (authState is AuthState.Authenticated) Icons.Default.CloudDone else Icons.Default.Cloud,
-                        title = "Backup na nuvem",
-                        value = if (authState is AuthState.Authenticated) "Ativo (Supabase)" else "Desativado"
-                    )
+
+                    // Automatic Cloud Backup Toggle
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = ViraSpacing.space8),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(text = "Backup automático na nuvem", style = ViraTypography.Body)
+                            Text(
+                                text = if (authState is AuthState.Authenticated) {
+                                    if (backupPrefs.isAutoBackupEnabled) "Ativo · ${if (backupPrefs.frequency == BackupFrequency.DAILY) "Diário" else "Semanal"}"
+                                    else "Desativado"
+                                } else "Requer conta Vira",
+                                style = ViraTypography.Caption,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = backupPrefs.isAutoBackupEnabled && authState is AuthState.Authenticated,
+                            onCheckedChange = { isChecked ->
+                                if (authState is AuthState.Authenticated) {
+                                    scope.launch {
+                                        appContainer.backupPreferencesRepository.setAutoBackupEnabled(isChecked)
+                                    }
+                                } else {
+                                    showAuthDialog = true
+                                }
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = MaterialTheme.colorScheme.primary,
+                                checkedTrackColor = MaterialTheme.colorScheme.primaryContainer
+                            )
+                        )
+                    }
+
+                    // Backup configuration options if enabled
+                    if (backupPrefs.isAutoBackupEnabled && authState is AuthState.Authenticated) {
+                        ProfileDivider()
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = ViraSpacing.space8),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(text = "Frequência", style = ViraTypography.Body)
+                            Row {
+                                TextButton(
+                                    onClick = { scope.launch { appContainer.backupPreferencesRepository.setFrequency(BackupFrequency.DAILY) } }
+                                ) {
+                                    Text(
+                                        "Diário",
+                                        color = if (backupPrefs.frequency == BackupFrequency.DAILY) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                TextButton(
+                                    onClick = { scope.launch { appContainer.backupPreferencesRepository.setFrequency(BackupFrequency.WEEKLY) } }
+                                ) {
+                                    Text(
+                                        "Semanal",
+                                        color = if (backupPrefs.frequency == BackupFrequency.WEEKLY) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+
+                        ProfileDivider()
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = ViraSpacing.space8),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(text = "Ligação de rede", style = ViraTypography.Body)
+                            Row {
+                                TextButton(
+                                    onClick = { scope.launch { appContainer.backupPreferencesRepository.setNetworkConstraint(BackupNetworkConstraint.WIFI_ONLY) } }
+                                ) {
+                                    Text(
+                                        "Apenas Wi-Fi",
+                                        color = if (backupPrefs.networkConstraint == BackupNetworkConstraint.WIFI_ONLY) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                TextButton(
+                                    onClick = { scope.launch { appContainer.backupPreferencesRepository.setNetworkConstraint(BackupNetworkConstraint.ANY_NETWORK) } }
+                                ) {
+                                    Text(
+                                        "Qualquer rede",
+                                        color = if (backupPrefs.networkConstraint == BackupNetworkConstraint.ANY_NETWORK) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     ProfileDivider()
-                    ProfileSettingsRow(
-                        icon = Icons.Default.Sync,
-                        title = "Sincronização",
-                        value = when {
-                            authState !is AuthState.Authenticated -> "Apenas local"
-                            lastSyncTime != null -> "Atualizado"
-                            else -> "Pendente"
+
+                    // Last Backup status and Trigger Now
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = ViraSpacing.space8),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(text = "Último backup na nuvem", style = ViraTypography.Body)
+                            val lastBackupText = if (backupPrefs.lastBackupTimestamp > 0) {
+                                SimpleDateFormat("dd/MM/yyyy · HH:mm", Locale.getDefault()).format(Date(backupPrefs.lastBackupTimestamp))
+                            } else {
+                                "Nenhum backup recente"
+                            }
+                            Text(
+                                text = "$lastBackupText (${backupPrefs.lastBackupStatus})",
+                                style = ViraTypography.Caption,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        if (authState is AuthState.Authenticated) {
+                            if (isBackingUpNow) {
+                                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                            } else {
+                                TextButton(
+                                    onClick = {
+                                        scope.launch {
+                                            isBackingUpNow = true
+                                            val payload = appContainer.backupManager.createSnapshotPayload()
+                                            val res = appContainer.backupManager.uploadSnapshot(payload, "MANUAL")
+                                            isBackingUpNow = false
+                                            if (res.isSuccess) {
+                                                Toast.makeText(context, "Cópia na nuvem concluída!", Toast.LENGTH_SHORT).show()
+                                            } else {
+                                                Toast.makeText(context, "Erro ao criar cópia na nuvem.", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    }
+                                ) {
+                                    Text("Fazer agora")
+                                }
+                            }
+                        }
+                    }
+
+                    // Backup Actions: History, Export, Import (full-width clean rows, avoiding any text wrapping)
+                    ProfileClickableRow(
+                        icon = Icons.Default.History,
+                        title = "Histórico de cópias na nuvem",
+                        subtitle = "Consultar e restaurar versões salvas",
+                        onClick = {
+                            if (authState is AuthState.Authenticated) {
+                                showCloudBackupsDialog = true
+                                isLoadingBackups = true
+                                scope.launch {
+                                    val result = appContainer.backupManager.fetchCloudBackups()
+                                    isLoadingBackups = false
+                                    cloudBackupsList = result.getOrDefault(emptyList())
+                                }
+                            } else {
+                                showAuthDialog = true
+                            }
+                        }
+                    )
+
+                    ProfileDivider()
+
+                    ProfileClickableRow(
+                        icon = Icons.Default.FileUpload,
+                        title = "Exportar cópia de segurança",
+                        subtitle = "Guardar ficheiro .vira neste dispositivo",
+                        onClick = {
+                            val today = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(Date())
+                            exportBackupLauncher.launch("Vira_Backup_$today.vira")
+                        }
+                    )
+
+                    ProfileDivider()
+
+                    ProfileClickableRow(
+                        icon = Icons.Default.FileDownload,
+                        title = "Restaurar cópia de segurança",
+                        subtitle = "Importar dados a partir de ficheiro .vira",
+                        onClick = {
+                            importBackupLauncher.launch(arrayOf("*/*", "application/octet-stream"))
                         }
                     )
                 }
                 Spacer(modifier = Modifier.height(ViraSpacing.space24))
             }
 
-            // 6. LOCATION SERVICES & PERMISSIONS STATUS
+            // 5. LOCALIZAÇÃO (LOCATION PERMISSION & GPS SERVICE)
             item {
                 ViraSectionHeader(title = "Localização")
                 Spacer(modifier = Modifier.height(ViraSpacing.space8))
@@ -596,7 +872,29 @@ fun ProfileScreen() {
                 Spacer(modifier = Modifier.height(ViraSpacing.space24))
             }
 
-            // 7. ABOUT VIRA & PRIVACY
+            // 6. PRIVACIDADE
+            item {
+                ViraSectionHeader(title = "Privacidade")
+                Spacer(modifier = Modifier.height(ViraSpacing.space8))
+                ViraSurfaceCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = ViraSpacing.space8)
+                    ) {
+                        Text(text = "Privacidade dos teus dados", style = ViraTypography.Body)
+                        Spacer(modifier = Modifier.height(ViraSpacing.space4))
+                        Text(
+                            text = "• Os locais e coordenadas das tuas recolhas são estritamente privados por padrão.\n• O backup ou sincronização na nuvem não torna os teus dados nem as tuas localizações públicas.\n• Qualquer partilha futura com a comunidade exigirá a tua autorização explícita (opt-in).\n• Nenhum dado pessoal é vendido a terceiros.",
+                            style = ViraTypography.Caption,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(ViraSpacing.space24))
+            }
+
+            // 7. SOBRE
             item {
                 ViraSectionHeader(title = "Sobre")
                 Spacer(modifier = Modifier.height(ViraSpacing.space8))
@@ -604,7 +902,13 @@ fun ProfileScreen() {
                     ProfileSettingsRow(
                         icon = Icons.Default.Info,
                         title = "Versão da aplicação",
-                        value = "1.0 (Beta Pessoal)"
+                        value = "0.2.0-beta"
+                    )
+                    ProfileDivider()
+                    ProfileSettingsRow(
+                        icon = Icons.Default.CheckCircle,
+                        title = "Tecnologia de mapas",
+                        value = "OpenFreeMap · OpenStreetMap"
                     )
                     ProfileDivider()
                     Column(
@@ -612,28 +916,19 @@ fun ProfileScreen() {
                             .fillMaxWidth()
                             .padding(vertical = ViraSpacing.space8)
                     ) {
-                        Text(
-                            text = "Privacidade e dados",
-                            style = ViraTypography.Body
-                        )
+                        Text(text = "Vira — Aplicação Pessoal", style = ViraTypography.Body)
                         Spacer(modifier = Modifier.height(ViraSpacing.space4))
                         Text(
-                            text = "As coordenadas de GPS são utilizadas para situar as tuas recolhas no mapa local. Nenhum dado pessoal ou de localização é vendido ou partilhado.",
+                            text = "Concebida para gestão pessoal de devolução de embalagens com foco em soberania de dados, rapidez e funcionamento offline.",
                             style = ViraTypography.Caption,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    ProfileDivider()
-                    ProfileSettingsRow(
-                        icon = Icons.Default.CheckCircle,
-                        title = "Tecnologia de mapas",
-                        value = "OpenFreeMap · OpenStreetMap"
-                    )
                 }
                 Spacer(modifier = Modifier.height(ViraSpacing.space24))
             }
 
-            // 8. DANGER ZONE
+            // DANGER ZONE
             item {
                 ViraSurfaceCard(
                     modifier = Modifier
@@ -659,36 +954,9 @@ fun ProfileScreen() {
                                 color = MaterialTheme.colorScheme.error
                             )
                         }
-                        Icon(
-                            imageVector = Icons.Default.ChevronRight,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(ViraIconSize.small)
-                        )
                     }
                 }
                 Spacer(modifier = Modifier.height(ViraSpacing.space32))
-            }
-
-            // FOOTER
-            item {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = "Vira — Aplicação Pessoal",
-                        style = ViraTypography.Caption,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(ViraSpacing.space4))
-                    Text(
-                        text = "Desenvolvida com foco em privacidade e rapidez.",
-                        style = ViraTypography.Caption,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                        textAlign = TextAlign.Center
-                    )
-                }
             }
         }
 
@@ -723,9 +991,7 @@ fun ProfileScreen() {
                 onDismissRequest = { showPhotoOptionsDialog = false },
                 title = { Text("Foto de Perfil") },
                 text = {
-                    Column {
-                        Text("Podes escolher uma nova foto da tua galeria ou remover a atual.")
-                    }
+                    Text("Podes escolher uma nova foto da tua galeria através do Seletor do Android ou remover a foto atual.")
                 },
                 confirmButton = {
                     TextButton(
@@ -800,10 +1066,163 @@ fun ProfileScreen() {
                     scope.launch {
                         appContainer.authRepository.signUp(email, pass)
                     }
+                },
+                onResetPassword = { email ->
+                    scope.launch {
+                        appContainer.authRepository.sendPasswordResetEmail(email)
+                    }
                 }
             )
         }
 
+        // CLOUD BACKUPS HISTORY DIALOG
+        if (showCloudBackupsDialog) {
+            AlertDialog(
+                onDismissRequest = { showCloudBackupsDialog = false },
+                title = { Text("Cópias de Segurança na Nuvem") },
+                text = {
+                    if (isLoadingBackups) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(120.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator()
+                        }
+                    } else if (cloudBackupsList.isEmpty()) {
+                        Text("Ainda não tens nenhuma cópia de segurança na nuvem.")
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(280.dp)
+                        ) {
+                            items(cloudBackupsList) { item ->
+                                Surface(
+                                    color = LocalViraExtraColors.current.surfaceInteractive,
+                                    shape = RoundedCornerShape(ViraRadius.small),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(12.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = formatIsoDate(item.createdAt),
+                                                style = ViraTypography.ButtonLabel
+                                            )
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Text(
+                                                text = "${item.collectionsCount} recolhas · ${item.spotsCount} locais",
+                                                style = ViraTypography.Caption,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            item.deviceModel?.let { model ->
+                                                Text(
+                                                    text = model,
+                                                    style = ViraTypography.Caption,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                                )
+                                            }
+                                        }
+                                        item.payload?.let { payload ->
+                                            TextButton(
+                                                onClick = {
+                                                    pendingRestorePayload = payload
+                                                    showCloudBackupsDialog = false
+                                                    showRestorePreviewDialog = true
+                                                }
+                                            ) {
+                                                Text("Restaurar")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showCloudBackupsDialog = false }) {
+                        Text("Fechar")
+                    }
+                }
+            )
+        }
+
+        // RESTORE PREVIEW & DESTRUCTIVE WARNING DIALOG
+        if (showRestorePreviewDialog && pendingRestorePayload != null) {
+            val payload = pendingRestorePayload!!
+            AlertDialog(
+                onDismissRequest = { showRestorePreviewDialog = false },
+                title = { Text("Restaurar Cópia de Segurança?") },
+                text = {
+                    Column {
+                        Text(
+                            text = "ATENÇÃO: Os dados locais atuais serão substituídos pelos dados contidos nesta cópia.",
+                            color = MaterialTheme.colorScheme.error,
+                            style = ViraTypography.Body
+                        )
+                        Spacer(modifier = Modifier.height(ViraSpacing.space12))
+                        Surface(
+                            color = LocalViraExtraColors.current.surfaceInteractive,
+                            shape = RoundedCornerShape(ViraRadius.small),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text(
+                                    text = "Resumo da cópia a restaurar:",
+                                    style = ViraTypography.ButtonLabel
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "• Data: ${formatIsoDate(payload.metadata.createdAt)}\n• Recolhas: ${payload.collections.size} (${payload.metadata.totalContainers} embalagens)\n• Locais pessoais: ${payload.spots.size}\n• Devoluções: ${payload.redemptions.size}",
+                                    style = ViraTypography.Caption,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            scope.launch {
+                                val result = appContainer.backupManager.restoreSnapshot(payload)
+                                showRestorePreviewDialog = false
+                                pendingRestorePayload = null
+                                if (result.isSuccess) {
+                                    Toast.makeText(context, "Dados restaurados com sucesso!", Toast.LENGTH_LONG).show()
+                                } else {
+                                    Toast.makeText(context, "Erro ao restaurar dados.", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
+                    ) {
+                        Text("Confirmar e Substituir", color = MaterialTheme.colorScheme.error)
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            showRestorePreviewDialog = false
+                            pendingRestorePayload = null
+                        }
+                    ) {
+                        Text("Cancelar")
+                    }
+                }
+            )
+        }
+
+        // MISMATCH STATE
         val mismatchState = authState as? AuthState.AccountMismatch
         var showDestructiveConfirmation by remember { mutableStateOf(false) }
 
@@ -867,6 +1286,16 @@ fun ProfileScreen() {
     }
 }
 
+private fun formatIsoDate(iso: String): String {
+    return try {
+        val instant = java.time.Instant.parse(iso)
+        val date = Date.from(instant)
+        SimpleDateFormat("dd/MM/yyyy · HH:mm", Locale.getDefault()).format(date)
+    } catch (_: Exception) {
+        iso
+    }
+}
+
 @Composable
 private fun EditProfileDialog(
     initialDisplayName: String,
@@ -926,11 +1355,9 @@ private fun EditProfileDialog(
     )
 }
 
-
-
 @Composable
 private fun ProfileSettingsRow(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     title: String,
     value: String
 ) {
@@ -960,6 +1387,59 @@ private fun ProfileSettingsRow(
 }
 
 @Composable
+private fun ProfileClickableRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String? = null,
+    isDestructive: Boolean = false,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(ViraRadius.small))
+            .clickable(onClick = onClick)
+            .padding(vertical = ViraSpacing.space12),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.weight(1f)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = if (isDestructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(ViraIconSize.medium)
+            )
+            Spacer(modifier = Modifier.width(ViraSpacing.space16))
+            Column {
+                Text(
+                    text = title,
+                    style = ViraTypography.Body,
+                    color = if (isDestructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                )
+                if (subtitle != null) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = subtitle,
+                        style = ViraTypography.Caption,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+        Icon(
+            imageVector = Icons.Default.ChevronRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+            modifier = Modifier.size(20.dp)
+        )
+    }
+}
+
+@Composable
 private fun ProfileDivider() {
     Box(
         modifier = Modifier
@@ -968,4 +1448,3 @@ private fun ProfileDivider() {
             .background(LocalViraExtraColors.current.divider)
     )
 }
-
