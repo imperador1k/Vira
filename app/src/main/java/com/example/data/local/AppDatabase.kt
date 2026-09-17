@@ -3,6 +3,7 @@ package com.example.data.local
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
+import androidx.room.withTransaction
 import androidx.sqlite.db.SupportSQLiteDatabase
 import java.util.UUID
 
@@ -31,6 +32,48 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun goalDao(): GoalDao
     abstract fun syncOutboxDao(): SyncOutboxDao
     abstract fun syncMetadataDao(): SyncMetadataDao
+
+    suspend fun clearPersonalDatasetAndRebind(newOwnerUserId: String) {
+        this.withTransaction {
+            val personalTables = listOf(
+                "collection_entry",
+                "collection_spot",
+                "redemption_entry",
+                "goal",
+                "user_profile",
+                "favorite_return_point",
+                "sync_outbox"
+            )
+            for (table in personalTables) {
+                openHelper.writableDatabase.execSQL("DELETE FROM $table")
+            }
+
+            syncMetadataDao().deleteKey("sync_cursor_version")
+
+            val now = System.currentTimeMillis()
+            syncMetadataDao().setValue(
+                SyncMetadataEntity(
+                    key = "dataset_owner_user_id",
+                    value = newOwnerUserId,
+                    updatedAt = now
+                )
+            )
+            syncMetadataDao().setValue(
+                SyncMetadataEntity(
+                    key = "dataset_linked_at",
+                    value = now.toString(),
+                    updatedAt = now
+                )
+            )
+            syncMetadataDao().setValue(
+                SyncMetadataEntity(
+                    key = "dataset_binding_version",
+                    value = "1",
+                    updatedAt = now
+                )
+            )
+        }
+    }
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {

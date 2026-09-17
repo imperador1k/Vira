@@ -46,6 +46,7 @@ class LocalDataLinkingTest {
             authStateFlow.value = AuthState.LocalOnly
             return Result.success(Unit)
         }
+        override suspend fun refreshAuthState() {}
         override fun getCurrentUserId(): String? = currentUserId
         override fun getCurrentEmail(): String? = if (currentUserId != null) "test@example.com" else null
     }
@@ -59,11 +60,13 @@ class LocalDataLinkingTest {
 
         fakeRemote = FakeSyncRemoteDataSource()
         val cursorManager = SyncCursorManager(database.syncMetadataDao())
+        val ownershipManager = DatasetOwnershipManager(database.syncMetadataDao())
         syncManager = SyncManager(
             database = database,
             remoteDataSource = fakeRemote,
             cursorManager = cursorManager,
-            authRepository = fakeAuthRepo
+            authRepository = fakeAuthRepo,
+            ownershipManager = ownershipManager
         )
     }
 

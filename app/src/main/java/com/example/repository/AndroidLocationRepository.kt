@@ -11,6 +11,7 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.core.location.LocationManagerCompat
 import com.example.domain.location.LocationResult
+import com.example.domain.location.LocationSource
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
@@ -72,13 +73,13 @@ class AndroidLocationRepository(
             }
 
             if (location != null) {
-                return@withContext mapToResult(location, hasFine)
+                return@withContext mapToResult(location, hasFine, LocationSource.FRESH)
             }
 
             // Fallback to native LocationManager if fused client times out or returns null
             val fallbackLocation = getFallbackLocation()
             if (fallbackLocation != null) {
-                return@withContext mapToResult(fallbackLocation, hasFine)
+                return@withContext mapToResult(fallbackLocation, hasFine, LocationSource.CACHED)
             }
 
             LocationResult.Unavailable
@@ -107,17 +108,29 @@ class AndroidLocationRepository(
     }
 
     @SuppressLint("MissingPermission")
-    private fun getFallbackLocation(): Location? {
+    internal fun getFallbackLocation(
+        maxAgeMillis: Long = MAX_FALLBACK_AGE_MILLIS,
+        currentTimeMillis: Long = System.currentTimeMillis()
+    ): Location? {
         val manager = locationManager ?: return null
         return try {
             val gpsLoc = manager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
             val networkLoc = manager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
-            when {
+            val candidate = when {
                 gpsLoc != null && networkLoc != null -> {
                     if (gpsLoc.time >= networkLoc.time) gpsLoc else networkLoc
                 }
                 gpsLoc != null -> gpsLoc
                 else -> networkLoc
+            } ?: return null
+
+            val age = currentTimeMillis - candidate.time
+            // Accept only if age is within maxAgeMillis (allowing up to 60s negative clock skew)
+            if (age in -60_000L..maxAgeMillis) {
+                candidate
+            } else {
+                Log.d(TAG, "Rejected stale fallback location (age: ${age / 1000}s, max: ${maxAgeMillis / 1000}s)")
+                null
             }
         } catch (e: SecurityException) {
             Log.w(TAG, "SecurityException during fallback location access", e)
@@ -125,24 +138,31 @@ class AndroidLocationRepository(
         }
     }
 
-    private fun mapToResult(location: Location, hasFinePermission: Boolean): LocationResult {
+    private fun mapToResult(
+        location: Location,
+        hasFinePermission: Boolean,
+        source: LocationSource = LocationSource.FRESH
+    ): LocationResult {
         val accuracy = if (location.hasAccuracy()) location.accuracy else null
         return if (hasFinePermission) {
             LocationResult.Success(
                 latitude = location.latitude,
                 longitude = location.longitude,
-                accuracyMeters = accuracy
+                accuracyMeters = accuracy,
+                source = source
             )
         } else {
             LocationResult.ApproximateOnly(
                 latitude = location.latitude,
                 longitude = location.longitude,
-                accuracyMeters = accuracy
+                accuracyMeters = accuracy,
+                source = source
             )
         }
     }
 
     companion object {
         private const val TAG = "AndroidLocationRepo"
+        const val MAX_FALLBACK_AGE_MILLIS = 5 * 60 * 1000L // 5 minutes
     }
 }

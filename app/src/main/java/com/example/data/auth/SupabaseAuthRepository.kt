@@ -14,6 +14,7 @@ import kotlinx.coroutines.launch
 
 class SupabaseAuthRepository(
     private val client: SupabaseClient,
+    private val ownershipManager: com.example.data.sync.DatasetOwnershipManager? = null,
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 ) : AuthRepository {
 
@@ -25,15 +26,7 @@ class SupabaseAuthRepository(
             client.auth.sessionStatus.collect { status ->
                 when (status) {
                     is SessionStatus.Authenticated -> {
-                        val user = client.auth.currentUserOrNull()
-                        if (user != null) {
-                            _authState.value = AuthState.Authenticated(
-                                userId = user.id,
-                                email = user.email ?: ""
-                            )
-                        } else {
-                            _authState.value = AuthState.LocalOnly
-                        }
+                        evaluateAuthState()
                     }
                     is SessionStatus.NotAuthenticated -> {
                         _authState.value = AuthState.LocalOnly
@@ -48,6 +41,31 @@ class SupabaseAuthRepository(
                 }
             }
         }
+    }
+
+    private suspend fun evaluateAuthState() {
+        val user = client.auth.currentUserOrNull()
+        if (user != null) {
+            val ownerId = ownershipManager?.getOwnerUserId()
+            if (ownerId != null && ownerId != user.id) {
+                _authState.value = AuthState.AccountMismatch(
+                    currentUserId = user.id,
+                    currentEmail = user.email ?: "",
+                    ownerUserId = ownerId
+                )
+            } else {
+                _authState.value = AuthState.Authenticated(
+                    userId = user.id,
+                    email = user.email ?: ""
+                )
+            }
+        } else {
+            _authState.value = AuthState.LocalOnly
+        }
+    }
+
+    override suspend fun refreshAuthState() {
+        evaluateAuthState()
     }
 
     override suspend fun signIn(email: String, password: String): Result<Unit> {

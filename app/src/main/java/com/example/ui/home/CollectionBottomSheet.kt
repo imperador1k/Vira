@@ -65,6 +65,7 @@ fun CollectionBottomSheet(
     onDismiss: () -> Unit,
     onSave: (count: Int, spotId: Int?) -> Unit,
     onPickOnMap: (() -> Unit)? = null,
+    onUseCurrentLocation: (() -> Unit)? = null,
     pickedCoordinate: Pair<Double, Double>? = null
 ) {
     var count by remember(initialCount) { mutableIntStateOf(initialCount) }
@@ -214,7 +215,7 @@ fun CollectionBottomSheet(
                 Column {
                     val locationTitle = when {
                         selectedSpot != null -> selectedSpot.name
-                        pickedCoordinate != null -> "Ponto no mapa (${String.format(java.util.Locale.US, "%.4f, %.4f", pickedCoordinate.first, pickedCoordinate.second)})"
+                        pickedCoordinate != null -> "Localização guardada"
                         else -> "Sem localização"
                     }
                     Text(
@@ -222,8 +223,14 @@ fun CollectionBottomSheet(
                         style = ViraTypography.Body,
                         color = MaterialTheme.colorScheme.onSurface
                     )
-                    selectedSpot?.address?.let {
-                        Text(text = it, style = ViraTypography.Caption, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (selectedSpot?.address != null) {
+                        Text(text = selectedSpot.address, style = ViraTypography.Caption, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else if (pickedCoordinate != null) {
+                        Text(
+                            text = String.format(java.util.Locale.US, "%.4f, %.4f", pickedCoordinate.first, pickedCoordinate.second),
+                            style = ViraTypography.Caption,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
                 TextButton(onClick = { isSelectingLocation = !isSelectingLocation }) {
@@ -245,6 +252,25 @@ fun CollectionBottomSheet(
                         .background(LocalViraExtraColors.current.surfaceInteractive)
                         .padding(ViraSpacing.space12)
                 ) {
+                    if (onUseCurrentLocation != null) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    isSelectingLocation = false
+                                    selectedSpotId = null
+                                    onQuantityChange?.invoke(count)
+                                    onUseCurrentLocation()
+                                }
+                                .padding(vertical = ViraSpacing.space8),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.MyLocation, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.width(ViraSpacing.space8))
+                            Text("Usar localização atual", style = ViraTypography.Body, color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+
                     if (onPickOnMap != null) {
                         Row(
                             modifier = Modifier

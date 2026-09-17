@@ -227,7 +227,11 @@ fun HistoryScreen() {
                             when (item) {
                                 is HistoryItemModel.CollectionItem -> {
                                     val entry = item.entry
-                                    val spotLabel = item.spotName ?: "Sem localização associada"
+                                    val spotLabel = when {
+                                        item.spotName != null -> item.spotName
+                                        entry.latitude != null && entry.longitude != null -> "Localização guardada"
+                                        else -> "Sem localização associada"
+                                    }
                                     val time = timeFormat.format(Date(entry.timestamp))
                                     val containerLabel = if (entry.containerCount == 1) "1 embalagem" else "${entry.containerCount} embalagens"
                                     ViraTimelineEntry(

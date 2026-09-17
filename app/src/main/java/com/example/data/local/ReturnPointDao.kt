@@ -32,4 +32,7 @@ interface ReturnPointDao {
 
     @Query("DELETE FROM return_point WHERE id = :id")
     suspend fun deleteReturnPointById(id: Int)
+
+    @Query("DELETE FROM return_point")
+    suspend fun clearAll()
 }

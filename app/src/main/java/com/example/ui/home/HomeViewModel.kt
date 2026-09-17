@@ -45,7 +45,8 @@ data class HomeUiState(
 class HomeViewModel(
     private val collectionRepository: CollectionRepository,
     private val balanceService: BalanceService,
-    private val spotRepository: SpotRepository
+    private val spotRepository: SpotRepository,
+    private val locationRepository: com.example.repository.LocationRepository
 ) : ViewModel() {
 
     private val recommendationEngine = RecommendationEngine()
@@ -181,7 +182,32 @@ class HomeViewModel(
     }
 
     fun setDraftSpot(spotId: Int?) {
-        _draft.update { it.copy(selectedSpotId = spotId) }
+        val spot = spotId?.let { id -> uiState.value.spots.firstOrNull { it.id == id } }
+        _draft.update {
+            it.copy(
+                selectedSpotId = spotId,
+                selectedLatitude = spot?.latitude ?: it.selectedLatitude,
+                selectedLongitude = spot?.longitude ?: it.selectedLongitude
+            )
+        }
+    }
+
+    fun useCurrentLocationForDraft(onComplete: (Boolean) -> Unit = {}) {
+        viewModelScope.launch {
+            when (val result = locationRepository.getCurrentLocation()) {
+                is LocationResult.Success -> {
+                    setDraftLocation(result.latitude, result.longitude)
+                    onComplete(true)
+                }
+                is LocationResult.ApproximateOnly -> {
+                    setDraftLocation(result.latitude, result.longitude)
+                    onComplete(true)
+                }
+                else -> {
+                    onComplete(false)
+                }
+            }
+        }
     }
 
     fun setDraftNote(note: String?) {
@@ -204,14 +230,18 @@ class HomeViewModel(
         val currentDraft = _draft.value
         if (currentDraft.quantity <= 0) return
         viewModelScope.launch {
+            val spot = currentDraft.selectedSpotId?.let { id -> uiState.value.spots.firstOrNull { it.id == id } }
+            val finalLat = currentDraft.selectedLatitude ?: spot?.latitude
+            val finalLng = currentDraft.selectedLongitude ?: spot?.longitude
+
             val entry = CollectionEntryEntity(
                 containerCount = currentDraft.quantity,
                 timestamp = System.currentTimeMillis(),
                 estimatedValueCents = currentDraft.quantity * DEPOSIT_VALUE_CENTS,
                 collectionSpotId = currentDraft.selectedSpotId,
                 note = currentDraft.note,
-                latitude = currentDraft.selectedLatitude,
-                longitude = currentDraft.selectedLongitude
+                latitude = finalLat,
+                longitude = finalLng
             )
             collectionRepository.insertCollection(entry)
             resetDraft()
@@ -225,14 +255,19 @@ class HomeViewModel(
         if (count <= 0) return
         viewModelScope.launch {
             val currentDraft = _draft.value
+            val effectiveSpotId = spotId ?: currentDraft.selectedSpotId
+            val spot = effectiveSpotId?.let { id -> uiState.value.spots.firstOrNull { it.id == id } }
+            val finalLat = currentDraft.selectedLatitude ?: spot?.latitude
+            val finalLng = currentDraft.selectedLongitude ?: spot?.longitude
+
             val entry = CollectionEntryEntity(
                 containerCount = count,
                 timestamp = System.currentTimeMillis(),
                 estimatedValueCents = count * DEPOSIT_VALUE_CENTS,
-                collectionSpotId = spotId ?: currentDraft.selectedSpotId,
+                collectionSpotId = effectiveSpotId,
                 note = note ?: currentDraft.note,
-                latitude = currentDraft.selectedLatitude,
-                longitude = currentDraft.selectedLongitude
+                latitude = finalLat,
+                longitude = finalLng
             )
             collectionRepository.insertCollection(entry)
             resetDraft()
@@ -246,12 +281,13 @@ class HomeViewModel(
 class HomeViewModelFactory(
     private val collectionRepository: CollectionRepository,
     private val balanceService: BalanceService,
-    private val spotRepository: SpotRepository
+    private val spotRepository: SpotRepository,
+    private val locationRepository: com.example.repository.LocationRepository
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(HomeViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return HomeViewModel(collectionRepository, balanceService, spotRepository) as T
+            return HomeViewModel(collectionRepository, balanceService, spotRepository, locationRepository) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }

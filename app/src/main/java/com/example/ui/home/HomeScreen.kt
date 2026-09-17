@@ -13,11 +13,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -25,6 +27,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -32,6 +35,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,13 +47,17 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.example.ViraApp
+import com.example.data.auth.AuthState
 import com.example.domain.Insight
+import com.example.ui.components.AuthDialog
 import com.example.ui.components.ViraEmptyState
 import com.example.ui.components.ViraInsightCard
 import com.example.ui.components.ViraPrimaryButton
 import com.example.ui.components.ViraSparkline
+import com.example.ui.components.ViraSurfaceCard
 import com.example.ui.components.ViraTopBar
 import com.example.ui.theme.LocalViraExtraColors
+import com.example.ui.theme.ViraIconSize
 import com.example.ui.theme.ViraRadius
 import com.example.ui.theme.ViraSpacing
 import com.example.ui.theme.ViraTypography
@@ -74,14 +82,52 @@ fun HomeScreen(
         factory = HomeViewModelFactory(
             collectionRepository = appContainer.collectionRepository,
             balanceService = appContainer.balanceService,
-            spotRepository = appContainer.spotRepository
+            spotRepository = appContainer.spotRepository,
+            locationRepository = appContainer.locationRepository
         )
     )
 
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val authState by appContainer.authRepository.authState.collectAsStateWithLifecycle(AuthState.LocalOnly)
+    val sessionCount by appContainer.userPreferencesRepository.sessionCount.collectAsStateWithLifecycle(1)
+    val lastReminderTime by appContainer.userPreferencesRepository.lastReminderTime.collectAsStateWithLifecycle(0L)
+    val isReminderDismissedForever by appContainer.userPreferencesRepository.isReminderDismissedForever.collectAsStateWithLifecycle(false)
+
+    var dismissedThisSession by rememberSaveable { mutableStateOf(false) }
+    var showAuthDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(authState) {
+        if (authState is AuthState.Authenticated) {
+            showAuthDialog = false
+        }
+    }
+
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     var showBottomSheet by remember { mutableStateOf(false) }
+
+    val isSheetVisible = showBottomSheet || uiState.draft.isSheetOpen
+
+    val isEligibleForReminder = remember(
+        authState,
+        sessionCount,
+        uiState.balance.containersCollected,
+        lastReminderTime,
+        isReminderDismissedForever,
+        dismissedThisSession
+    ) {
+        if (authState is AuthState.Authenticated) return@remember false
+        if (isReminderDismissedForever) return@remember false
+        if (dismissedThisSession) return@remember false
+
+        val fourteenDaysMillis = 14L * 24 * 60 * 60 * 1000L
+        val now = System.currentTimeMillis()
+        if (now - lastReminderTime < fourteenDaysMillis) return@remember false
+
+        sessionCount >= 3 || uiState.balance.containersCollected >= 20
+    }
+
+    val shouldShowReminder = isEligibleForReminder && !isSheetVisible
 
     // Observe coordinate returned from MapPickerScreen via SavedStateHandle
     val currentBackStack = navController?.currentBackStackEntry
@@ -109,6 +155,22 @@ fun HomeScreen(
             ) {
                 ViraTopBar(title = "Vira", onProfileClick = onNavigateToProfile)
                 Spacer(modifier = Modifier.height(ViraSpacing.space32))
+
+                if (shouldShowReminder) {
+                    AccountReminderCard(
+                        onCreateAccount = { showAuthDialog = true },
+                        onRemindLater = {
+                            dismissedThisSession = true
+                            scope.launch { appContainer.userPreferencesRepository.snoozeAccountReminder() }
+                        },
+                        onDismissForever = {
+                            dismissedThisSession = true
+                            scope.launch { appContainer.userPreferencesRepository.dismissAccountReminderForever() }
+                        }
+                    )
+                    Spacer(modifier = Modifier.height(ViraSpacing.space16))
+                }
+
                 ViraEmptyState(
                     title = "A tua primeira recolha\ncomeça aqui.",
                     subtitle = "Regista as embalagens que encontrares.\nA Vira acompanha o teu progresso, valor a recuperar e os teus locais mais produtivos.",
@@ -129,6 +191,24 @@ fun HomeScreen(
                 item {
                     ViraTopBar(title = "Vira", onProfileClick = onNavigateToProfile)
                     Spacer(modifier = Modifier.height(ViraSpacing.space16))
+                }
+
+                // NON-INTRUSIVE ACCOUNT REMINDER
+                if (shouldShowReminder) {
+                    item {
+                        AccountReminderCard(
+                            onCreateAccount = { showAuthDialog = true },
+                            onRemindLater = {
+                                dismissedThisSession = true
+                                scope.launch { appContainer.userPreferencesRepository.snoozeAccountReminder() }
+                            },
+                            onDismissForever = {
+                                dismissedThisSession = true
+                                scope.launch { appContainer.userPreferencesRepository.dismissAccountReminderForever() }
+                            }
+                        )
+                        Spacer(modifier = Modifier.height(ViraSpacing.space16))
+                    }
                 }
 
                 // 1. HOJE (Hero activity focus)
@@ -481,8 +561,92 @@ fun HomeScreen(
                         viewModel.closeDraftSheet()
                         onNavigateToMapPicker()
                     }
+                },
+                onUseCurrentLocation = {
+                    viewModel.useCurrentLocationForDraft()
+                }
+            )
+        }
+
+        if (showAuthDialog) {
+            AuthDialog(
+                authState = authState,
+                onDismiss = { showAuthDialog = false },
+                onSignIn = { email, pass ->
+                    scope.launch {
+                        appContainer.authRepository.signIn(email, pass)
+                    }
+                },
+                onSignUp = { email, pass ->
+                    scope.launch {
+                        appContainer.authRepository.signUp(email, pass)
+                    }
                 }
             )
         }
     }
 }
+
+@Composable
+private fun AccountReminderCard(
+    onCreateAccount: () -> Unit,
+    onRemindLater: () -> Unit,
+    onDismissForever: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    ViraSurfaceCard(modifier = modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.Top) {
+            Icon(
+                imageVector = Icons.Default.Cloud,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(ViraIconSize.medium)
+            )
+            Spacer(modifier = Modifier.width(ViraSpacing.space12))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Não percas o teu histórico",
+                    style = ViraTypography.ButtonLabel,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(ViraSpacing.space4))
+                Text(
+                    text = "Cria uma conta para fazer backup das tuas recolhas e recuperar os teus dados se mudares de telemóvel.",
+                    style = ViraTypography.Caption,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(ViraSpacing.space12))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextButton(onClick = onDismissForever) {
+                Text(
+                    text = "Não voltar a mostrar",
+                    style = ViraTypography.Caption,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                )
+            }
+            Spacer(modifier = Modifier.width(ViraSpacing.space4))
+            TextButton(onClick = onRemindLater) {
+                Text(
+                    text = "Agora não",
+                    style = ViraTypography.Caption,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(modifier = Modifier.width(ViraSpacing.space4))
+            TextButton(onClick = onCreateAccount) {
+                Text(
+                    text = "Criar conta",
+                    style = ViraTypography.ButtonLabel,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+    }
+}
+

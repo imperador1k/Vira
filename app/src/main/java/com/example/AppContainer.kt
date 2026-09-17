@@ -48,9 +48,13 @@ class AppContainer(private val context: Context) {
         .build()
     }
 
+    val datasetOwnershipManager: com.example.data.sync.DatasetOwnershipManager by lazy {
+        com.example.data.sync.DatasetOwnershipManager(database.syncMetadataDao())
+    }
+
     val authRepository: AuthRepository by lazy {
         SupabaseClientProvider.getClient()?.let { client ->
-            SupabaseAuthRepository(client)
+            SupabaseAuthRepository(client, datasetOwnershipManager)
         } ?: object : AuthRepository {
             private val _state = MutableStateFlow<AuthState>(AuthState.LocalOnly)
             override val authState: StateFlow<AuthState> = _state
@@ -59,6 +63,7 @@ class AppContainer(private val context: Context) {
             override suspend fun signUp(email: String, password: String): Result<Unit> =
                 Result.failure(IllegalStateException("Supabase not configured"))
             override suspend fun signOut(): Result<Unit> = Result.success(Unit)
+            override suspend fun refreshAuthState() {}
             override fun getCurrentUserId(): String? = null
             override fun getCurrentEmail(): String? = null
         }
@@ -79,8 +84,15 @@ class AppContainer(private val context: Context) {
             database = database,
             remoteDataSource = syncRemoteDataSource,
             cursorManager = syncCursorManager,
-            authRepository = authRepository
+            authRepository = authRepository,
+            ownershipManager = datasetOwnershipManager
         )
+    }
+
+    suspend fun clearPersonalDataAndBind(newUserId: String) {
+        database.clearPersonalDatasetAndRebind(newUserId)
+        authRepository.refreshAuthState()
+        syncManager.syncAll()
     }
 
     val collectionRepository: CollectionRepository by lazy {
@@ -115,6 +127,18 @@ class AppContainer(private val context: Context) {
 
     val locationRepository: LocationRepository by lazy {
         AndroidLocationRepository(context)
+    }
+
+    val networkMonitor: com.example.util.NetworkMonitor by lazy {
+        com.example.util.NetworkMonitor(context)
+    }
+
+    val themePreferencesRepository: com.example.data.preferences.ThemePreferencesRepository by lazy {
+        com.example.data.preferences.ThemePreferencesRepository(context)
+    }
+
+    val userPreferencesRepository: com.example.data.preferences.UserPreferencesRepository by lazy {
+        com.example.data.preferences.UserPreferencesRepository(context)
     }
 
     fun scheduleBackgroundSync() {

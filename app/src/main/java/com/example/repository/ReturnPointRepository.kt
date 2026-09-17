@@ -68,47 +68,8 @@ class ReturnPointRepository(
         returnPointDao.deleteReturnPointById(id)
 
     suspend fun seedDefaultReturnPointsIfEmpty() {
-        val existing = returnPointDao.getAllReturnPoints().firstOrNull()
-        if (existing.isNullOrEmpty()) {
-            val defaults = listOf(
-                ReturnPointEntity(
-                    id = 1,
-                    name = "Pingo Doce Baixa (Máquina SDR)",
-                    latitude = 38.7118,
-                    longitude = -9.1382,
-                    type = ReturnPointType.AUTOMATIC_MACHINE.name,
-                    source = ReturnPointSource.OFFICIAL.name,
-                    verificationStatus = VerificationStatus.VERIFIED.name,
-                    lastVerifiedAt = System.currentTimeMillis(),
-                    address = "Rua do Ouro 120, Lisboa",
-                    openingHours = "08:00 - 21:00"
-                ),
-                ReturnPointEntity(
-                    id = 2,
-                    name = "Continente Bom Dia Chiado",
-                    latitude = 38.7105,
-                    longitude = -9.1417,
-                    type = ReturnPointType.AUTOMATIC_MACHINE.name,
-                    source = ReturnPointSource.OFFICIAL.name,
-                    verificationStatus = VerificationStatus.VERIFIED.name,
-                    lastVerifiedAt = System.currentTimeMillis(),
-                    address = "Largo do Chiado 8, Lisboa",
-                    openingHours = "08:30 - 21:30"
-                ),
-                ReturnPointEntity(
-                    id = 3,
-                    name = "Ponto Comunitário Rossio",
-                    latitude = 38.7142,
-                    longitude = -9.1396,
-                    type = ReturnPointType.MANUAL_POINT.name,
-                    source = ReturnPointSource.COMMUNITY.name,
-                    verificationStatus = VerificationStatus.COMMUNITY_CONFIRMED.name,
-                    lastVerifiedAt = null,
-                    address = "Praça Dom Pedro IV, Lisboa",
-                    openingHours = "Horário comercial"
-                )
-            )
-            returnPointDao.insertAll(defaults)
-        }
+        // In personal beta: Do NOT fabricate or seed fake return points.
+        // Purge any legacy demo points so that an honest empty state is presented.
+        returnPointDao.clearAll()
     }
 }

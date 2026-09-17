@@ -19,7 +19,8 @@ enum class MapMode {
 data class UserLocationState(
     val position: Position,
     val accuracyMeters: Float? = null,
-    val isApproximate: Boolean = false
+    val isApproximate: Boolean = false,
+    val isCached: Boolean = false
 )
 
 data class MapUiState(
@@ -40,6 +41,7 @@ data class MapUiState(
     val activeFilter: MapFilter = MapFilter.All,
     val searchQuery: String = "",
     val isLocationServicesDisabled: Boolean = false,
+    val isOnline: Boolean = true,
     val locationErrorMessage: String? = null,
     val cameraMoveTrigger: Long = 0L
 )

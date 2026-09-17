@@ -23,9 +23,19 @@ class SyncWorker(
         android.util.Log.i(TAG, "SyncWorker doWork started (attempt=$runAttemptCount)")
         val app = applicationContext as? ViraApp ?: return Result.failure()
         val authRepo = app.container.authRepository
-        if (authRepo.getCurrentUserId() == null) {
+        val currentUserId = authRepo.getCurrentUserId()
+        if (currentUserId == null) {
             android.util.Log.d(TAG, "SyncWorker skipped: user is in local-only mode")
             return Result.success()
+        }
+        val ownershipManager = app.container.datasetOwnershipManager
+        val ownerUserId = ownershipManager.getOwnerUserId()
+        if (ownerUserId != null && ownerUserId != currentUserId) {
+            android.util.Log.e(
+                TAG,
+                "SyncWorker aborted: account mismatch. owner=$ownerUserId, current=$currentUserId"
+            )
+            return Result.failure()
         }
         val syncManager = app.container.syncManager
 

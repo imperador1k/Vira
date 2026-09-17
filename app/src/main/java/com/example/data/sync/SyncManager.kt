@@ -17,7 +17,8 @@ class SyncManager(
     private val remoteDataSource: SyncRemoteDataSource,
     private val cursorManager: SyncCursorManager? = null,
     private val reconciler: InboundSyncReconciler = InboundSyncReconciler(database, cursorManager),
-    private val authRepository: AuthRepository? = null
+    private val authRepository: AuthRepository? = null,
+    private val ownershipManager: DatasetOwnershipManager? = null
 ) {
 
     companion object {
@@ -28,11 +29,51 @@ class SyncManager(
     val lastSyncTime: StateFlow<Long?> = _lastSyncTime.asStateFlow()
 
     /**
+     * Enforces the sync guard invariant: authenticatedUserId == localOwnerUserId.
+     * Aborts if a different account attempts to sync, or if unauthenticated.
+     * If unowned, binds the dataset to the authenticated user (First Account Link).
+     */
+    suspend fun verifyOwnershipGuard(): Boolean {
+        if (authRepository == null && ownershipManager == null) {
+            return true
+        }
+        val currentUserId = authRepository?.getCurrentUserId()
+        if (currentUserId == null) {
+            android.util.Log.d(TAG, "verifyOwnershipGuard: unauthenticated user, sync skipped")
+            return false
+        }
+        val ownerUserId = ownershipManager?.getOwnerUserId()
+        if (ownerUserId == null) {
+            // First Account Link: bind dataset to current authenticated user
+            ownershipManager?.bindOwner(currentUserId)
+            android.util.Log.i(TAG, "verifyOwnershipGuard: First account link established for owner=$currentUserId")
+            return true
+        }
+        if (ownerUserId != currentUserId) {
+            android.util.Log.e(
+                TAG,
+                "SYNC GUARD VIOLATION: authenticatedUserId ($currentUserId) != localOwnerUserId ($ownerUserId). Aborting sync."
+            )
+            return false
+        }
+        return true
+    }
+
+    /**
      * Links existing offline/local-created entities to the newly authenticated account.
      * Enqueues un-synced entities with remoteVersion == 0 into the sync outbox
      * without changing their stable remoteId or duplicating records.
      */
     suspend fun linkExistingLocalData() {
+        val currentUserId = authRepository?.getCurrentUserId() ?: return
+        val ownerUserId = ownershipManager?.getOwnerUserId()
+        if (ownerUserId != null && ownerUserId != currentUserId) {
+            android.util.Log.e(TAG, "linkExistingLocalData: aborted due to account mismatch. owner=$ownerUserId, current=$currentUserId")
+            return
+        }
+        if (ownerUserId == null) {
+            ownershipManager?.bindOwner(currentUserId)
+        }
         val collections = database.collectionDao().getAllCollections().firstOrNull() ?: emptyList()
         for (c in collections) {
             val remoteId = c.remoteId ?: continue
@@ -98,6 +139,10 @@ class SyncManager(
      * Guaranteed atomic transaction: either all changes and cursor advance succeed, or none.
      */
     suspend fun pullAndReconcile(): Boolean {
+        if (!verifyOwnershipGuard()) {
+            android.util.Log.e(TAG, "pullAndReconcile: aborted by ownership guard")
+            return false
+        }
         val cursor = cursorManager?.getCursor() ?: 0L
         android.util.Log.d(TAG, "Pull starting with cursor=$cursor")
         val pullResponse = try {
@@ -131,6 +176,11 @@ class SyncManager(
             return true
         }
 
+        if (!verifyOwnershipGuard()) {
+            android.util.Log.e(TAG, "syncAll: aborted by ownership guard")
+            return false
+        }
+
         android.util.Log.i(TAG, "Starting syncAll cycle...")
         linkExistingLocalData()
 
@@ -157,6 +207,10 @@ class SyncManager(
      * Returns true if all processed successfully, false if network error occurred.
      */
     suspend fun processOutboxBatch(batchSize: Int = 50): Boolean {
+        if (!verifyOwnershipGuard()) {
+            android.util.Log.e(TAG, "processOutboxBatch: aborted by ownership guard")
+            return false
+        }
         val pendingOps = database.syncOutboxDao().getPendingBatch(batchSize)
         if (pendingOps.isEmpty()) return true
         android.util.Log.d(TAG, "processOutboxBatch: found ${pendingOps.size} pending ops")
@@ -173,6 +227,10 @@ class SyncManager(
     }
 
     private suspend fun processOperation(op: SyncOutboxEntity): Boolean {
+        if (!verifyOwnershipGuard()) {
+            android.util.Log.e(TAG, "processOperation: aborted by ownership guard")
+            return false
+        }
         android.util.Log.d(
             TAG,
             "Push op: entity=${op.entityType}, remoteId=${op.entityRemoteId}, type=${op.operationType}, retry=${op.retryCount}"

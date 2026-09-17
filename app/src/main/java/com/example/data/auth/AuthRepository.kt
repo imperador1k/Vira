@@ -10,6 +10,11 @@ sealed class AuthState {
     data object LocalOnly : AuthState()
     data object Loading : AuthState()
     data class Authenticated(val userId: String, val email: String) : AuthState()
+    data class AccountMismatch(
+        val currentUserId: String,
+        val currentEmail: String,
+        val ownerUserId: String
+    ) : AuthState()
     data class Error(val message: String) : AuthState()
 }
 
@@ -25,6 +30,8 @@ interface AuthRepository {
     suspend fun signUp(email: String, password: String): Result<Unit>
 
     suspend fun signOut(): Result<Unit>
+
+    suspend fun refreshAuthState()
 
     fun getCurrentUserId(): String?
 

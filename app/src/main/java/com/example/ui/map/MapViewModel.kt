@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.local.CollectionSpotEntity
 import com.example.data.local.ReturnPointEntity
 import com.example.domain.location.LocationResult
+import com.example.domain.location.LocationSource
 import com.example.repository.LocationRepository
 import com.example.repository.ReturnPointRepository
 import com.example.repository.SpotRepository
@@ -21,7 +22,8 @@ import org.maplibre.spatialk.geojson.Position
 class MapViewModel(
     private val spotRepository: SpotRepository,
     private val returnPointRepository: ReturnPointRepository,
-    private val locationRepository: LocationRepository
+    private val locationRepository: LocationRepository,
+    private val networkMonitor: com.example.util.NetworkMonitor
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MapUiState())
@@ -30,6 +32,14 @@ class MapViewModel(
     private var hasInitializedCamera = false
 
     init {
+        checkLocationServicesState()
+
+        viewModelScope.launch {
+            networkMonitor.isOnline.collect { online ->
+                _uiState.update { it.copy(isOnline = online) }
+            }
+        }
+
         viewModelScope.launch {
             returnPointRepository.seedDefaultReturnPointsIfEmpty()
         }
@@ -51,6 +61,16 @@ class MapViewModel(
         }
     }
 
+    fun checkLocationServicesState() {
+        val enabled = locationRepository.isLocationEnabled()
+        _uiState.update {
+            it.copy(
+                isLocationServicesDisabled = !enabled,
+                locationErrorMessage = if (!enabled) "Ativa a localização para utilizar a tua posição atual." else if (it.isLocationServicesDisabled) null else it.locationErrorMessage
+            )
+        }
+    }
+
     fun updateCameraPosition(newPosition: CameraPosition) {
         hasInitializedCamera = true
         _uiState.update { it.copy(cameraPosition = newPosition) }
@@ -68,6 +88,7 @@ class MapViewModel(
 
             when (val result = locationRepository.getCurrentLocation()) {
                 is LocationResult.Success -> {
+                    val isCached = result.source == LocationSource.CACHED
                     val pos = Position(longitude = result.longitude, latitude = result.latitude)
                     hasInitializedCamera = true
                     _uiState.update {
@@ -76,13 +97,14 @@ class MapViewModel(
                             userLocation = UserLocationState(
                                 position = pos,
                                 accuracyMeters = result.accuracyMeters,
-                                isApproximate = false
+                                isApproximate = false,
+                                isCached = isCached
                             ),
                             cameraPosition = CameraPosition(
                                 bearing = 0.0,
                                 target = pos,
                                 tilt = 0.0,
-                                zoom = 15.5
+                                zoom = if (isCached) 14.5 else 15.5
                             ),
                             cameraMoveTrigger = it.cameraMoveTrigger + 1,
                             locationErrorMessage = null
@@ -90,6 +112,7 @@ class MapViewModel(
                     }
                 }
                 is LocationResult.ApproximateOnly -> {
+                    val isCached = result.source == LocationSource.CACHED
                     val pos = Position(longitude = result.longitude, latitude = result.latitude)
                     hasInitializedCamera = true
                     _uiState.update {
@@ -98,7 +121,8 @@ class MapViewModel(
                             userLocation = UserLocationState(
                                 position = pos,
                                 accuracyMeters = result.accuracyMeters,
-                                isApproximate = true
+                                isApproximate = true,
+                                isCached = isCached
                             ),
                             cameraPosition = CameraPosition(
                                 bearing = 0.0,
@@ -218,7 +242,8 @@ class MapViewModel(
 class MapViewModelFactory(
     private val spotRepository: SpotRepository,
     private val returnPointRepository: ReturnPointRepository,
-    private val locationRepository: LocationRepository
+    private val locationRepository: LocationRepository,
+    private val networkMonitor: com.example.util.NetworkMonitor
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -226,7 +251,8 @@ class MapViewModelFactory(
             return MapViewModel(
                 spotRepository,
                 returnPointRepository,
-                locationRepository
+                locationRepository,
+                networkMonitor
             ) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")

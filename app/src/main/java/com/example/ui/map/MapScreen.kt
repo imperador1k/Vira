@@ -33,6 +33,7 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.AddLocation
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Directions
 import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.Map
@@ -113,7 +114,8 @@ fun MapScreen(
         factory = MapViewModelFactory(
             spotRepository = appContainer.spotRepository,
             returnPointRepository = appContainer.returnPointRepository,
-            locationRepository = appContainer.locationRepository
+            locationRepository = appContainer.locationRepository,
+            networkMonitor = appContainer.networkMonitor
         )
     )
 
@@ -126,6 +128,12 @@ fun MapScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val lifecycleState by lifecycleOwner.lifecycle.currentStateFlow.collectAsStateWithLifecycle()
     val isMapRouteActive = lifecycleState.isAtLeast(Lifecycle.State.RESUMED)
+
+    LaunchedEffect(isMapRouteActive) {
+        if (isMapRouteActive) {
+            viewModel.checkLocationServicesState()
+        }
+    }
 
     var isListView by remember { mutableStateOf(false) }
     var showCollectionSheet by remember { mutableStateOf(false) }
@@ -273,6 +281,19 @@ fun MapScreen(
                             }
                         }
                     }
+                } else {
+                    item {
+                        Spacer(modifier = Modifier.height(ViraSpacing.space24))
+                        ViraSectionHeader(title = "POSTOS DE DEVOLUÇÃO")
+                        Spacer(modifier = Modifier.height(ViraSpacing.space12))
+                        ViraSurfaceCard(modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                text = "Pontos de devolução ainda não disponíveis nesta versão.",
+                                style = ViraTypography.BodySecondary,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
             }
         } else {
@@ -315,14 +336,15 @@ fun MapScreen(
                         // Current User Location Fallback Marker if LocationPuck hasn't received its first fix
                         if (locationState.lastLocation == null) {
                             uiState.userLocation?.let { loc ->
+                                val ringColor = if (loc.isCached) Color(0xFFF59E0B) else Color(0xFF00D1B2)
                                 Box(
                                     modifier = Modifier.placedAt(position = loc.position, alignment = Alignment.Center)
                                 ) {
                                     Box(
                                         modifier = Modifier
-                                            .size(if (loc.isApproximate) 44.dp else 28.dp)
+                                            .size(if (loc.isApproximate || loc.isCached) 44.dp else 28.dp)
                                             .clip(CircleShape)
-                                            .background(Color(0xFF00D1B2).copy(alpha = if (loc.isApproximate) 0.15f else 0.25f)),
+                                            .background(ringColor.copy(alpha = if (loc.isApproximate || loc.isCached) 0.18f else 0.25f)),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Box(
@@ -332,7 +354,7 @@ fun MapScreen(
                                                 .background(Color.White)
                                                 .padding(2.dp)
                                                 .clip(CircleShape)
-                                                .background(Color(0xFF00D1B2))
+                                                .background(ringColor)
                                         )
                                     }
                                 }
@@ -556,6 +578,76 @@ fun MapScreen(
                             }
                         }
 
+                        // Honest Return Points Empty Notice when ReturnPoints filter is active
+                        if (uiState.activeFilter == MapFilter.ReturnPoints && filteredReturnPoints.isEmpty()) {
+                            Spacer(modifier = Modifier.height(ViraSpacing.space8))
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(ViraRadius.medium),
+                                color = LocalViraExtraColors.current.surfaceElevated.copy(alpha = 0.95f),
+                                shadowElevation = 2.dp
+                            ) {
+                                Text(
+                                    text = "Pontos de devolução ainda não disponíveis nesta versão.",
+                                    style = ViraTypography.Caption,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = ViraSpacing.space16, vertical = ViraSpacing.space12)
+                                )
+                            }
+                        }
+
+                        // Non-blocking Offline Banner
+                        if (!uiState.isOnline) {
+                            Spacer(modifier = Modifier.height(ViraSpacing.space8))
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(ViraRadius.medium),
+                                color = LocalViraExtraColors.current.surfaceElevated.copy(alpha = 0.95f),
+                                shadowElevation = 3.dp,
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(ViraSpacing.space12),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(
+                                        modifier = Modifier.weight(1f),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.CloudOff,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(ViraSpacing.space12))
+                                        Column {
+                                            Text(
+                                                text = "Sem ligação à Internet",
+                                                style = ViraTypography.ButtonLabel,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Text(
+                                                text = "O mapa necessita de ligação para carregar.\nAs tuas recolhas continuam disponíveis offline.",
+                                                style = ViraTypography.Caption,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.width(ViraSpacing.space8))
+                                    TextButton(
+                                        onClick = {
+                                            viewModel.recenterOnUser()
+                                        }
+                                    ) {
+                                        Text("Tentar novamente", style = ViraTypography.ButtonLabel, color = MaterialTheme.colorScheme.primary)
+                                    }
+                                }
+                            }
+                        }
+
                         // Actionable Location Disabled Banner
                         if (uiState.isLocationServicesDisabled) {
                             Spacer(modifier = Modifier.height(ViraSpacing.space8))
@@ -570,20 +662,86 @@ fun MapScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Text(
-                                        text = "Ativa a localização do dispositivo para encontrares a tua posição.",
-                                        style = ViraTypography.Caption,
-                                        color = MaterialTheme.colorScheme.onErrorContainer,
-                                        modifier = Modifier.weight(1f)
-                                    )
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Localização desativada",
+                                            style = ViraTypography.ButtonLabel,
+                                            color = MaterialTheme.colorScheme.onErrorContainer
+                                        )
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = "Ativa a localização para utilizar a tua posição atual.",
+                                            style = ViraTypography.Caption,
+                                            color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.9f)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(ViraSpacing.space8))
                                     TextButton(
                                         onClick = {
                                             context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
                                             viewModel.clearErrorMessage()
                                         }
                                     ) {
-                                        Text("Ativar", style = ViraTypography.ButtonLabel, color = MaterialTheme.colorScheme.error)
+                                        Text("Ativar localização", style = ViraTypography.ButtonLabel, color = MaterialTheme.colorScheme.error)
                                     }
+                                }
+                            }
+                        }
+
+                        // Informative Cached Fallback Notice
+                        if (uiState.userLocation?.isCached == true) {
+                            Spacer(modifier = Modifier.height(ViraSpacing.space8))
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(ViraRadius.medium),
+                                color = LocalViraExtraColors.current.surfaceElevated.copy(alpha = 0.95f),
+                                shadowElevation = 2.dp
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = ViraSpacing.space16, vertical = ViraSpacing.space8),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Place,
+                                        contentDescription = null,
+                                        tint = Color(0xFFF59E0B),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(ViraSpacing.space8))
+                                    Text(
+                                        text = "Posição recente em cache (< 5 min). Sem sinal GPS direto.",
+                                        style = ViraTypography.Caption,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                        }
+
+                        // Informative Unavailable / Error Notice
+                        if (uiState.locationErrorMessage != null && !uiState.isLocationServicesDisabled) {
+                            Spacer(modifier = Modifier.height(ViraSpacing.space8))
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(ViraRadius.medium),
+                                color = LocalViraExtraColors.current.surfaceElevated.copy(alpha = 0.95f),
+                                shadowElevation = 2.dp
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = ViraSpacing.space16, vertical = ViraSpacing.space8),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Place,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(ViraSpacing.space8))
+                                    Text(
+                                        text = uiState.locationErrorMessage!!,
+                                        style = ViraTypography.Caption,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                 }
                             }
                         }

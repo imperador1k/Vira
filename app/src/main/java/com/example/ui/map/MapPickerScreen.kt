@@ -14,10 +14,12 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material3.CircularProgressIndicator
@@ -33,6 +35,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -69,6 +72,7 @@ fun MapPickerScreen(
     val context = LocalContext.current
     val appContainer = (context.applicationContext as ViraApp).container
     val locationRepository = appContainer.locationRepository
+    val isOnline by appContainer.networkMonitor.isOnline.collectAsStateWithLifecycle(initialValue = true)
     val scope = rememberCoroutineScope()
 
     var isLocating by remember { mutableStateOf(false) }
@@ -210,6 +214,38 @@ fun MapPickerScreen(
                 }
                 IconButton(onClick = onCancel) {
                     Icon(Icons.Default.Close, contentDescription = "Cancelar")
+                }
+            }
+        }
+
+        // 3b. Offline Notice Banner
+        if (!isOnline) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .statusBarsPadding()
+                    .padding(top = 80.dp, start = ViraSpacing.space16, end = ViraSpacing.space16)
+                    .fillMaxWidth(),
+                shape = RoundedCornerShape(ViraRadius.medium),
+                color = LocalViraExtraColors.current.surfaceElevated.copy(alpha = 0.95f),
+                shadowElevation = 4.dp
+            ) {
+                Row(
+                    modifier = Modifier.padding(ViraSpacing.space12),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CloudOff,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(ViraSpacing.space12))
+                    Text(
+                        text = "Sem ligação à Internet. O mapa necessita de rede para carregar.",
+                        style = ViraTypography.Caption,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
                 }
             }
         }

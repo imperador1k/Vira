@@ -41,6 +41,9 @@ import com.example.ui.profile.ProfileScreen
 import com.example.ui.progress.ProgressScreen
 import com.example.ui.redemption.RedemptionScreen
 import com.example.ui.spot.SpotDetailsScreen
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.data.preferences.AppThemeMode
 import com.example.ui.theme.MyApplicationTheme
 
 class MainActivity : ComponentActivity() {
@@ -48,7 +51,17 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            MyApplicationTheme {
+            val appContainer = (applicationContext as ViraApp).container
+            val themeMode by appContainer.themePreferencesRepository.themeMode
+                .collectAsStateWithLifecycle(initialValue = AppThemeMode.SYSTEM)
+
+            val isDark = when (themeMode) {
+                AppThemeMode.SYSTEM -> isSystemInDarkTheme()
+                AppThemeMode.LIGHT -> false
+                AppThemeMode.DARK -> true
+            }
+
+            MyApplicationTheme(darkTheme = isDark) {
                 ViraAppScreen()
             }
         }
