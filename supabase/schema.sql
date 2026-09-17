@@ -1,5 +1,6 @@
 -- ==============================================================================
 -- VIRA — Supabase PostgreSQL Schema & Global Versioning Protocol
+-- Canonical Database Definition: supabase/schema.sql
 -- ==============================================================================
 
 create extension if not exists "uuid-ossp";
@@ -92,7 +93,7 @@ create table if not exists public.goals (
     deleted_at timestamptz default null
 );
 
--- 8. Safe migration to drop identities and drop column defaults (preventing double nextval)
+-- 8. Drop identities and drop column defaults (preventing double nextval)
 alter table public.user_profiles alter column server_version drop identity if exists;
 alter table public.user_profiles alter column server_version drop default;
 
@@ -153,7 +154,14 @@ drop policy if exists "Allow all operations for anon/authenticated in dev" on pu
 drop policy if exists "Allow all operations for anon/authenticated in dev" on public.redemption_entries;
 drop policy if exists "Allow all operations for anon/authenticated in dev" on public.goals;
 
--- Granular RLS Policies for user_profiles
+-- Drop any DELETE policies (client physical deletes are strictly prohibited)
+drop policy if exists "Users can delete own profile" on public.user_profiles;
+drop policy if exists "Users can delete own spots" on public.collection_spots;
+drop policy if exists "Users can delete own collections" on public.collection_entries;
+drop policy if exists "Users can delete own redemptions" on public.redemption_entries;
+drop policy if exists "Users can delete own goals" on public.goals;
+
+-- Granular RLS Policies for user_profiles (SELECT, INSERT, UPDATE only)
 create policy "Users can select own profile"
     on public.user_profiles for select
     to authenticated
@@ -170,12 +178,7 @@ create policy "Users can update own profile"
     using (user_id = (select auth.uid()))
     with check (user_id = (select auth.uid()));
 
-create policy "Users can delete own profile"
-    on public.user_profiles for delete
-    to authenticated
-    using (user_id = (select auth.uid()));
-
--- Granular RLS Policies for collection_spots
+-- Granular RLS Policies for collection_spots (SELECT, INSERT, UPDATE only)
 create policy "Users can select own spots"
     on public.collection_spots for select
     to authenticated
@@ -192,12 +195,7 @@ create policy "Users can update own spots"
     using (user_id = (select auth.uid()))
     with check (user_id = (select auth.uid()));
 
-create policy "Users can delete own spots"
-    on public.collection_spots for delete
-    to authenticated
-    using (user_id = (select auth.uid()));
-
--- Granular RLS Policies for collection_entries
+-- Granular RLS Policies for collection_entries (SELECT, INSERT, UPDATE only)
 create policy "Users can select own collections"
     on public.collection_entries for select
     to authenticated
@@ -214,12 +212,7 @@ create policy "Users can update own collections"
     using (user_id = (select auth.uid()))
     with check (user_id = (select auth.uid()));
 
-create policy "Users can delete own collections"
-    on public.collection_entries for delete
-    to authenticated
-    using (user_id = (select auth.uid()));
-
--- Granular RLS Policies for redemption_entries
+-- Granular RLS Policies for redemption_entries (SELECT, INSERT, UPDATE only)
 create policy "Users can select own redemptions"
     on public.redemption_entries for select
     to authenticated
@@ -236,12 +229,7 @@ create policy "Users can update own redemptions"
     using (user_id = (select auth.uid()))
     with check (user_id = (select auth.uid()));
 
-create policy "Users can delete own redemptions"
-    on public.redemption_entries for delete
-    to authenticated
-    using (user_id = (select auth.uid()));
-
--- Granular RLS Policies for goals
+-- Granular RLS Policies for goals (SELECT, INSERT, UPDATE only)
 create policy "Users can select own goals"
     on public.goals for select
     to authenticated
@@ -258,13 +246,8 @@ create policy "Users can update own goals"
     using (user_id = (select auth.uid()))
     with check (user_id = (select auth.uid()));
 
-create policy "Users can delete own goals"
-    on public.goals for delete
-    to authenticated
-    using (user_id = (select auth.uid()));
-
 -- 11. Targeted Table & Sequence Grants
--- Explicit revokes on private Vira sync objects (avoiding blanket revokes that affect unrelated/public objects)
+-- Explicit revokes on private Vira sync objects
 revoke all on table public.user_profiles from anon, public;
 revoke all on table public.collection_spots from anon, public;
 revoke all on table public.collection_entries from anon, public;
@@ -272,8 +255,20 @@ revoke all on table public.redemption_entries from anon, public;
 revoke all on table public.goals from anon, public;
 revoke all on sequence public.global_sync_version_seq from anon, public;
 
--- Grant minimal necessary permissions to authenticated role
-grant select, insert, update, delete on table
+-- Revoke physical DELETE from all client roles (Enforces Tombstone-only architecture)
+revoke delete on table
+    public.user_profiles,
+    public.collection_spots,
+    public.collection_entries,
+    public.redemption_entries,
+    public.goals
+from authenticated, anon, public;
+
+-- Harden internal trigger function: revoke direct EXECUTE from client roles
+revoke execute on function public.assign_server_sync_metadata() from public, anon, authenticated;
+
+-- Grant minimal necessary permissions to authenticated role (NO DELETE)
+grant select, insert, update on table
     public.user_profiles,
     public.collection_spots,
     public.collection_entries,
@@ -284,6 +279,10 @@ to authenticated;
 grant usage on sequence public.global_sync_version_seq to authenticated;
 
 -- 12. Default Privileges for Future Objects (Deny by default in schema public)
+alter default privileges for role postgres in schema public revoke execute on functions from public, anon;
+alter default privileges for role postgres in schema public revoke all on tables from anon, public;
+alter default privileges for role postgres in schema public revoke all on sequences from anon, public;
+
 alter default privileges in schema public revoke execute on functions from public, anon;
 alter default privileges in schema public revoke all on tables from anon, public;
 alter default privileges in schema public revoke all on sequences from anon, public;
@@ -295,11 +294,7 @@ create index if not exists idx_redemption_entries_user_version on public.redempt
 create index if not exists idx_goals_user_version on public.goals (user_id, server_version);
 create index if not exists idx_user_profiles_user_version on public.user_profiles (user_id, server_version);
 
--- ==============================================================================
 -- 14. Corrective Sequence Initialization
--- Sets global_sync_version_seq to at least the highest server_version existing
--- across all tables, never moving the sequence backwards.
--- ==============================================================================
 do $$
 declare
     v_max_existing bigint;
@@ -320,32 +315,25 @@ begin
 
     select last_value into v_current_seq from public.global_sync_version_seq;
 
-    -- Guarantee sequence is initialized above existing data and never moves backwards
     v_target := greatest(v_max_existing, v_current_seq, 1);
 
     perform setval('public.global_sync_version_seq', v_target, true);
 end $$;
 
--- ==============================================================================
--- 15. Atomic Snapshot-Consistent Pull RPC (SECURITY INVOKER + User Isolated)
--- Requires authentication, filters strictly by caller auth.uid(), and returns
--- consistent new_cursor evaluated inside caller permissions.
--- ==============================================================================
+-- 15. Single-Statement Atomic Snapshot Pull RPC
+-- Declared STABLE: read-only, side-effect free, optimizer friendly.
+-- Executes in a SINGLE SQL statement with CTEs:
+-- Guarantees that all 5 tables and the new cursor are evaluated against the EXACT SAME database snapshot at query start.
 create or replace function public.pull_sync_changes(p_since_cursor bigint default 0)
-returns jsonb as $$
+returns jsonb
+stable
+language plpgsql
+security invoker
+set search_path = public
+as $$
 declare
     v_caller uuid;
-    v_collections jsonb;
-    v_spots jsonb;
-    v_redemptions jsonb;
-    v_goals jsonb;
-    v_profiles jsonb;
-    v_max_collection bigint;
-    v_max_spot bigint;
-    v_max_redemption bigint;
-    v_max_goal bigint;
-    v_max_profile bigint;
-    v_new_cursor bigint;
+    v_result jsonb;
 begin
     -- 1. Strict Authentication Requirement
     v_caller := auth.uid();
@@ -353,62 +341,60 @@ begin
         raise exception 'Unauthorized: authentication required' using errcode = '42501';
     end if;
 
-    -- 2. Read caller's collections
-    select coalesce(jsonb_agg(to_jsonb(c)), '[]'::jsonb), coalesce(max(c.server_version), p_since_cursor)
-    into v_collections, v_max_collection
-    from public.collection_entries c
-    where c.user_id = v_caller
-      and c.server_version > p_since_cursor;
-
-    -- 3. Read caller's spots
-    select coalesce(jsonb_agg(to_jsonb(s)), '[]'::jsonb), coalesce(max(s.server_version), p_since_cursor)
-    into v_spots, v_max_spot
-    from public.collection_spots s
-    where s.user_id = v_caller
-      and s.server_version > p_since_cursor;
-
-    -- 4. Read caller's redemptions
-    select coalesce(jsonb_agg(to_jsonb(r)), '[]'::jsonb), coalesce(max(r.server_version), p_since_cursor)
-    into v_redemptions, v_max_redemption
-    from public.redemption_entries r
-    where r.user_id = v_caller
-      and r.server_version > p_since_cursor;
-
-    -- 5. Read caller's goals
-    select coalesce(jsonb_agg(to_jsonb(g)), '[]'::jsonb), coalesce(max(g.server_version), p_since_cursor)
-    into v_goals, v_max_goal
-    from public.goals g
-    where g.user_id = v_caller
-      and g.server_version > p_since_cursor;
-
-    -- 6. Read caller's profile
-    select coalesce(jsonb_agg(to_jsonb(p)), '[]'::jsonb), coalesce(max(p.server_version), p_since_cursor)
-    into v_profiles, v_max_profile
-    from public.user_profiles p
-    where p.user_id = v_caller
-      and p.server_version > p_since_cursor;
-
-    -- Compute atomic new cursor strictly from max version of caller records returned in snapshot
-    v_new_cursor := greatest(
-        p_since_cursor,
-        v_max_collection,
-        v_max_spot,
-        v_max_redemption,
-        v_max_goal,
-        v_max_profile
-    );
-
-    return jsonb_build_object(
-        'collections', v_collections,
-        'spots', v_spots,
-        'redemptions', v_redemptions,
-        'goals', v_goals,
-        'profile', (case when jsonb_array_length(v_profiles) > 0 then v_profiles->0 else null end),
-        'new_cursor', v_new_cursor,
+    -- 2. Execute a SINGLE ATOMIC STATEMENT across all synchronizable tables.
+    -- In PostgreSQL READ COMMITTED, all CTEs within a single statement evaluate
+    -- against the EXACT SAME single database snapshot taken at statement start.
+    with
+    ce as (
+        select coalesce(jsonb_agg(to_jsonb(c)), '[]'::jsonb) as data,
+               coalesce(max(c.server_version), p_since_cursor) as max_v
+        from public.collection_entries c
+        where c.user_id = v_caller
+          and c.server_version > p_since_cursor
+    ),
+    cs as (
+        select coalesce(jsonb_agg(to_jsonb(s)), '[]'::jsonb) as data,
+               coalesce(max(s.server_version), p_since_cursor) as max_v
+        from public.collection_spots s
+        where s.user_id = v_caller
+          and s.server_version > p_since_cursor
+    ),
+    re as (
+        select coalesce(jsonb_agg(to_jsonb(r)), '[]'::jsonb) as data,
+               coalesce(max(r.server_version), p_since_cursor) as max_v
+        from public.redemption_entries r
+        where r.user_id = v_caller
+          and r.server_version > p_since_cursor
+    ),
+    g as (
+        select coalesce(jsonb_agg(to_jsonb(gl)), '[]'::jsonb) as data,
+               coalesce(max(gl.server_version), p_since_cursor) as max_v
+        from public.goals gl
+        where gl.user_id = v_caller
+          and gl.server_version > p_since_cursor
+    ),
+    up as (
+        select coalesce(jsonb_agg(to_jsonb(p)), '[]'::jsonb) as data,
+               coalesce(max(p.server_version), p_since_cursor) as max_v
+        from public.user_profiles p
+        where p.user_id = v_caller
+          and p.server_version > p_since_cursor
+    )
+    select jsonb_build_object(
+        'collections', ce.data,
+        'spots', cs.data,
+        'redemptions', re.data,
+        'goals', g.data,
+        'profile', (case when jsonb_array_length(up.data) > 0 then up.data->0 else null end),
+        'new_cursor', greatest(p_since_cursor, ce.max_v, cs.max_v, re.max_v, g.max_v, up.max_v),
         'has_more', false
-    );
+    )
+    into v_result
+    from ce cross join cs cross join re cross join g cross join up;
+
+    return v_result;
 end;
-$$ language plpgsql security invoker set search_path = public;
+$$;
 
 -- Restrict Execution to Authenticated Callers (Deny from public, anon, service_role)
 revoke execute on function public.pull_sync_changes(bigint) from public, anon, service_role;

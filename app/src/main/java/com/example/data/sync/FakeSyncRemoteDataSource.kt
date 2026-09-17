@@ -199,6 +199,7 @@ class FakeSyncRemoteDataSource(
     }
 
     override suspend fun pullChanges(sinceCursor: Long): RemoteSyncPullResponse {
+        if (shouldFailWithNetworkError) throw java.io.IOException("Simulated network timeout during pull")
         val user = currentUserId ?: throw IllegalStateException("Unauthorized: authentication required")
         val simulated = simulatedPullResponse
         if (simulated != null) return simulated

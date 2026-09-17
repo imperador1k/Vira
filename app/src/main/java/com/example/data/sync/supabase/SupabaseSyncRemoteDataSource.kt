@@ -114,14 +114,18 @@ class SupabaseSyncRemoteDataSource(
         } ?: return RemoteSyncResult.Success(System.currentTimeMillis(), 0L)
 
         return try {
-            client.from(table).delete {
+            val nowIso = java.time.Instant.now().toString()
+            val updatePayload = buildJsonObject {
+                put("deleted_at", nowIso)
+            }
+            client.from(table).update(updatePayload) {
                 filter {
                     eq("id", remoteId)
                 }
             }
             RemoteSyncResult.Success(System.currentTimeMillis(), 0L)
         } catch (e: Exception) {
-            RemoteSyncResult.NetworkError(e.message ?: "Failed to delete from Supabase", canRetry = true)
+            RemoteSyncResult.NetworkError(e.message ?: "Failed to soft-delete from Supabase", canRetry = true)
         }
     }
 
