@@ -38,8 +38,8 @@ val LocalViraExtraColors = staticCompositionLocalOf {
 }
 
 private val DarkColorScheme = darkColorScheme(
-    primary = ViraCyan,
-    onPrimary = Color(0xFF0C0E12),
+    primary = ViraCyanDark,
+    onPrimary = Color(0xFF0E1117),
     primaryContainer = ViraCyanMutedDark,
     onPrimaryContainer = ViraCyanDark,
     background = ViraBackgroundDark,
@@ -58,7 +58,7 @@ private val DarkColorScheme = darkColorScheme(
 
 private val LightColorScheme = lightColorScheme(
     primary = ViraCyan,
-    onPrimary = Color(0xFF0C0E12),
+    onPrimary = Color.White,
     primaryContainer = ViraCyanMutedLight,
     onPrimaryContainer = ViraCyanLight,
     background = ViraBackgroundLight,

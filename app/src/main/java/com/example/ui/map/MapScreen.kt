@@ -70,6 +70,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -303,13 +304,16 @@ fun MapScreen(
                                 val isVerified = point.verificationStatus == "VERIFIED"
                                 Surface(
                                     shape = RoundedCornerShape(ViraRadius.small),
-                                    color = if (isVerified) Color(0xFF0F2E28) else Color(0xFF2A2416)
+                                    color = if (isVerified) LocalViraExtraColors.current.cyanMuted else LocalViraExtraColors.current.warning.copy(alpha = 0.12f)
                                 ) {
                                     Text(
                                         text = if (isVerified) "VERIFICADO" else "COMUNITÁRIO",
-                                        style = ViraTypography.Caption,
-                                        color = if (isVerified) Color(0xFF00D1B2) else Color(0xFFF59E0B),
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        style = ViraTypography.Caption.copy(
+                                            fontSize = 11.sp,
+                                            fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
+                                        ),
+                                        color = if (isVerified) MaterialTheme.colorScheme.primary else LocalViraExtraColors.current.warning,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                                     )
                                 }
                             }

@@ -61,7 +61,7 @@ fun ViraSurfaceCard(
         border = border
     ) {
         Column(
-            modifier = Modifier.padding(ViraSpacing.space24),
+            modifier = Modifier.padding(20.dp),
             content = content
         )
     }
@@ -85,7 +85,7 @@ fun ViraCompactCard(
         border = border
     ) {
         Column(
-            modifier = Modifier.padding(ViraSpacing.space16),
+            modifier = Modifier.padding(16.dp),
             content = content
         )
     }
@@ -118,12 +118,12 @@ fun ViraStatCard(
             )
             if (badgeText != null) {
                 Surface(
-                    color = badgeColor.copy(alpha = 0.15f),
+                    color = badgeColor.copy(alpha = 0.12f),
                     shape = RoundedCornerShape(ViraRadius.small)
                 ) {
                     Text(
                         text = badgeText,
-                        style = ViraTypography.Caption.copy(fontSize = 11.sp),
+                        style = ViraTypography.Caption.copy(fontSize = 11.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
                         color = badgeColor,
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                     )
@@ -140,7 +140,7 @@ fun ViraStatCard(
         Spacer(modifier = Modifier.height(ViraSpacing.space8))
         Text(
             text = value,
-            style = ViraTypography.DisplayMedium,
+            style = ViraTypography.DisplayMedium.copy(fontSize = 28.sp),
             color = MaterialTheme.colorScheme.onBackground
         )
         if (subtitle != null) {

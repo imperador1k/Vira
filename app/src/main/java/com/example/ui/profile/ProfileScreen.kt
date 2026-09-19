@@ -47,6 +47,29 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.LocationOff
+import android.graphics.Bitmap
+import android.graphics.Matrix
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.material.icons.automirrored.filled.RotateRight
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.ZoomIn
+import androidx.compose.material.icons.filled.ZoomOut
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.ClipOp
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import kotlin.math.roundToInt
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Lock
@@ -76,12 +99,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ViraApp
 import com.example.data.auth.AuthState
@@ -94,6 +119,8 @@ import com.example.data.preferences.UserProfileData
 import com.example.domain.ContainerBalance
 import com.example.ui.components.AuthDialog
 import com.example.ui.components.ViraMetric
+import com.example.ui.components.ViraPrimaryButton
+import com.example.ui.components.ViraSecondaryButton
 import com.example.ui.components.ViraSectionHeader
 import com.example.ui.components.ViraStatCard
 import com.example.ui.components.ViraSurfaceCard
@@ -106,6 +133,7 @@ import com.example.ui.theme.ViraTypography
 import com.example.util.FormatUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -140,6 +168,7 @@ fun ProfileScreen() {
 
     var showClearDataDialog by remember { mutableStateOf(false) }
     var showAuthDialog by remember { mutableStateOf(false) }
+    var authDialogInitialSignIn by remember { mutableStateOf(false) }
     var showEditProfileDialog by remember { mutableStateOf(false) }
     var showPhotoOptionsDialog by remember { mutableStateOf(false) }
     var showCloudBackupsDialog by remember { mutableStateOf(false) }
@@ -150,12 +179,23 @@ fun ProfileScreen() {
     var pendingRestorePayload by remember { mutableStateOf<ViraBackupPayload?>(null) }
     var showRestorePreviewDialog by remember { mutableStateOf(false) }
 
+    var rawPickedBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var showCropDialog by remember { mutableStateOf(false) }
+
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
         if (uri != null) {
-            scope.launch {
-                appContainer.userPreferencesRepository.saveAvatarFromUri(uri)
+            scope.launch(Dispatchers.IO) {
+                val bitmap = appContainer.userPreferencesRepository.decodeAndFixOrientation(uri)
+                if (bitmap != null) {
+                    rawPickedBitmap = bitmap
+                    showCropDialog = true
+                } else {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "Erro ao carregar a imagem.", Toast.LENGTH_SHORT).show()
+                    }
+                }
             }
         }
     }
@@ -346,29 +386,78 @@ fun ProfileScreen() {
                                     modifier = Modifier
                                         .size(64.dp)
                                         .clip(CircleShape)
-                                        .background(LocalViraExtraColors.current.surfaceInteractive),
+                                        .background(LocalViraExtraColors.current.surfaceInteractive)
+                                        .clickable {
+                                            if (profilePrefs.avatarFilePath != null) {
+                                                showPhotoOptionsDialog = true
+                                            } else {
+                                                photoPickerLauncher.launch(
+                                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                                )
+                                            }
+                                        },
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Person,
-                                        contentDescription = "Avatar Modo Local",
-                                        modifier = Modifier.size(ViraIconSize.large),
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
+                                    if (avatarBitmap != null) {
+                                        Image(
+                                            bitmap = avatarBitmap,
+                                            contentDescription = "Foto de perfil",
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Default.Person,
+                                            contentDescription = "Avatar Modo Local",
+                                            modifier = Modifier.size(ViraIconSize.large),
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.BottomEnd)
+                                            .size(22.dp)
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.primary),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.CameraAlt,
+                                            contentDescription = "Alterar foto",
+                                            modifier = Modifier.size(12.dp),
+                                            tint = MaterialTheme.colorScheme.onPrimary
+                                        )
+                                    }
                                 }
                                 Spacer(modifier = Modifier.width(ViraSpacing.space16))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = "Modo local",
+                                        text = profilePrefs.displayName.ifBlank { "Modo local" },
                                         style = ViraTypography.MetricMedium,
                                         color = MaterialTheme.colorScheme.onBackground
                                     )
                                     Spacer(modifier = Modifier.height(ViraSpacing.space4))
                                     Text(
-                                        text = "Os teus dados estão guardados neste dispositivo.",
+                                        text = "Modo Local · Guardado neste dispositivo",
                                         style = ViraTypography.Caption,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
+                                }
+                                Surface(
+                                    shape = CircleShape,
+                                    color = LocalViraExtraColors.current.surfaceInteractive,
+                                    modifier = Modifier
+                                        .clip(CircleShape)
+                                        .clickable { showEditProfileDialog = true }
+                                ) {
+                                    Box(modifier = Modifier.padding(8.dp)) {
+                                        Icon(
+                                            imageVector = Icons.Default.Edit,
+                                            contentDescription = "Editar perfil",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(ViraIconSize.small)
+                                        )
+                                    }
                                 }
                             }
                             Spacer(modifier = Modifier.height(ViraSpacing.space12))
@@ -384,14 +473,27 @@ fun ProfileScreen() {
                                     modifier = Modifier.padding(ViraSpacing.space12)
                                 )
                             }
-                            Spacer(modifier = Modifier.height(ViraSpacing.space12))
+                            Spacer(modifier = Modifier.height(ViraSpacing.space16))
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.End
+                                horizontalArrangement = Arrangement.spacedBy(ViraSpacing.space12)
                             ) {
-                                TextButton(onClick = { showAuthDialog = true }) {
-                                    Text("Criar conta", style = ViraTypography.ButtonLabel, color = MaterialTheme.colorScheme.primary)
-                                }
+                                ViraSecondaryButton(
+                                    text = "Criar conta",
+                                    modifier = Modifier.weight(1f),
+                                    onClick = {
+                                        authDialogInitialSignIn = false
+                                        showAuthDialog = true
+                                    }
+                                )
+                                ViraPrimaryButton(
+                                    text = "Iniciar sessão",
+                                    modifier = Modifier.weight(1f),
+                                    onClick = {
+                                        authDialogInitialSignIn = true
+                                        showAuthDialog = true
+                                    }
+                                )
                             }
                         }
                     }
@@ -487,10 +589,25 @@ fun ProfileScreen() {
                                 Spacer(modifier = Modifier.height(ViraSpacing.space12))
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.End
+                                    horizontalArrangement = Arrangement.spacedBy(ViraSpacing.space12)
                                 ) {
-                                    TextButton(onClick = { showAuthDialog = true }) {
-                                        Text("Entrar ou Criar conta", style = ViraTypography.ButtonLabel, color = MaterialTheme.colorScheme.primary)
+                                    TextButton(
+                                        onClick = {
+                                            authDialogInitialSignIn = false
+                                            showAuthDialog = true
+                                        },
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text("Criar conta", style = ViraTypography.ButtonLabel)
+                                    }
+                                    TextButton(
+                                        onClick = {
+                                            authDialogInitialSignIn = true
+                                            showAuthDialog = true
+                                        },
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text("Iniciar sessão", style = ViraTypography.ButtonLabel, color = MaterialTheme.colorScheme.primary)
                                     }
                                 }
                             }
@@ -525,9 +642,12 @@ fun ProfileScreen() {
                                             appContainer.themePreferencesRepository.setThemeMode(mode)
                                         }
                                     },
-                                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else LocalViraExtraColors.current.surfaceInteractive,
+                                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else LocalViraExtraColors.current.surfaceElevated,
                                 shape = RoundedCornerShape(ViraRadius.medium),
-                                border = if (isSelected) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (isSelected) MaterialTheme.colorScheme.primary else LocalViraExtraColors.current.cardBorder.copy(alpha = 0.7f)
+                                )
                             ) {
                                 Column(
                                     modifier = Modifier.padding(vertical = ViraSpacing.space12, horizontal = ViraSpacing.space8),
@@ -543,8 +663,11 @@ fun ProfileScreen() {
                                     Spacer(modifier = Modifier.height(ViraSpacing.space4))
                                     Text(
                                         text = label,
-                                        style = ViraTypography.ButtonLabel,
-                                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                        style = ViraTypography.Caption.copy(
+                                            fontSize = 12.sp,
+                                            fontWeight = if (isSelected) androidx.compose.ui.text.font.FontWeight.SemiBold else androidx.compose.ui.text.font.FontWeight.Medium
+                                        ),
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                             }
@@ -1071,6 +1194,27 @@ fun ProfileScreen() {
                     scope.launch {
                         appContainer.authRepository.sendPasswordResetEmail(email)
                     }
+                },
+                isSignInDefault = authDialogInitialSignIn
+            )
+        }
+
+        // AVATAR CROP DIALOG
+        val currentPickedBmp = rawPickedBitmap
+        if (showCropDialog && currentPickedBmp != null) {
+            AvatarCropDialog(
+                bitmap = currentPickedBmp,
+                onDismiss = {
+                    showCropDialog = false
+                    rawPickedBitmap = null
+                },
+                onSave = { cropped ->
+                    scope.launch {
+                        appContainer.userPreferencesRepository.saveAvatarFromBitmap(cropped)
+                        showCropDialog = false
+                        rawPickedBitmap = null
+                        Toast.makeText(context, "Foto de perfil atualizada!", Toast.LENGTH_SHORT).show()
+                    }
                 }
             )
         }
@@ -1353,6 +1497,257 @@ private fun EditProfileDialog(
             }
         }
     )
+}
+
+@Composable
+private fun AvatarCropDialog(
+    bitmap: Bitmap,
+    onDismiss: () -> Unit,
+    onSave: (Bitmap) -> Unit
+) {
+    var rotationAngle by remember { mutableStateOf(0) }
+    var zoomFactor by remember { mutableStateOf(1f) }
+    var panOffset by remember { mutableStateOf(Offset.Zero) }
+
+    val displayedBitmap = remember(bitmap, rotationAngle) {
+        if (rotationAngle % 360 == 0) {
+            bitmap
+        } else {
+            val matrix = Matrix().apply { postRotate(rotationAngle.toFloat()) }
+            Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+        }
+    }
+
+    val density = LocalDensity.current
+    val viewportDp = 260.dp
+    val viewportPx = with(density) { viewportDp.toPx() }
+
+    val bmpW = displayedBitmap.width.toFloat()
+    val bmpH = displayedBitmap.height.toFloat()
+    val baseScale = maxOf(viewportPx / bmpW, viewportPx / bmpH)
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = ViraSpacing.space16)
+                .clip(RoundedCornerShape(ViraRadius.large)),
+            color = LocalViraExtraColors.current.cardBackground,
+            border = BorderStroke(1.dp, LocalViraExtraColors.current.cardBorder),
+            shape = RoundedCornerShape(ViraRadius.large)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(ViraSpacing.space24),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "Ajustar foto de perfil",
+                    style = ViraTypography.ScreenTitle,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                Spacer(modifier = Modifier.height(ViraSpacing.space4))
+                Text(
+                    text = "Arrasta para enquadrar ou ajusta o zoom e a rotação.",
+                    style = ViraTypography.Caption,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(ViraSpacing.space16))
+
+                // Viewport with circular frame and WYSIWYG darkening scrim
+                Box(
+                    modifier = Modifier
+                        .size(viewportDp)
+                        .clip(RoundedCornerShape(ViraRadius.medium))
+                        .clipToBounds()
+                        .background(Color.Black)
+                        .pointerInput(displayedBitmap) {
+                            detectTransformGestures { _, pan, zoom, _ ->
+                                val newZoom = (zoomFactor * zoom).coerceIn(1f, 4f)
+                                zoomFactor = newZoom
+
+                                val currentTotalScale = baseScale * newZoom
+                                val maxPanX = maxOf(0f, (bmpW * currentTotalScale - viewportPx) / 2f)
+                                val maxPanY = maxOf(0f, (bmpH * currentTotalScale - viewportPx) / 2f)
+
+                                panOffset = Offset(
+                                    x = (panOffset.x + pan.x).coerceIn(-maxPanX, maxPanX),
+                                    y = (panOffset.y + pan.y).coerceIn(-maxPanY, maxPanY)
+                                )
+                            }
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Image(
+                        bitmap = displayedBitmap.asImageBitmap(),
+                        contentDescription = "Pré-visualização",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                scaleX = zoomFactor
+                                scaleY = zoomFactor
+                                translationX = panOffset.x
+                                translationY = panOffset.y
+                            }
+                    )
+
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val strokeWidth = 2.5.dp.toPx()
+                        val radius = size.minDimension / 2f
+                        val circlePath = Path().apply {
+                            addOval(
+                                Rect(
+                                    center.x - radius,
+                                    center.y - radius,
+                                    center.x + radius,
+                                    center.y + radius
+                                )
+                            )
+                        }
+
+                        // Scrim outside circular crop viewport
+                        clipPath(circlePath, clipOp = ClipOp.Difference) {
+                            drawRect(Color.Black.copy(alpha = 0.65f))
+                        }
+
+                        // Circular crop frame border
+                        drawCircle(
+                            color = Color(0xFF00E5BF),
+                            radius = radius - strokeWidth / 2f,
+                            center = center,
+                            style = Stroke(width = strokeWidth)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(ViraSpacing.space16))
+
+                // Zoom control
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ZoomOut,
+                        contentDescription = "Reduzir zoom",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Slider(
+                        value = zoomFactor,
+                        onValueChange = { newZoom ->
+                            zoomFactor = newZoom
+                            val currentTotalScale = baseScale * newZoom
+                            val maxPanX = maxOf(0f, (bmpW * currentTotalScale - viewportPx) / 2f)
+                            val maxPanY = maxOf(0f, (bmpH * currentTotalScale - viewportPx) / 2f)
+                            panOffset = Offset(
+                                x = panOffset.x.coerceIn(-maxPanX, maxPanX),
+                                y = panOffset.y.coerceIn(-maxPanY, maxPanY)
+                            )
+                        },
+                        valueRange = 1f..4f,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = ViraSpacing.space8),
+                        colors = SliderDefaults.colors(
+                            thumbColor = MaterialTheme.colorScheme.primary,
+                            activeTrackColor = MaterialTheme.colorScheme.primary
+                        )
+                    )
+                    Icon(
+                        imageVector = Icons.Default.ZoomIn,
+                        contentDescription = "Aumentar zoom",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(ViraSpacing.space8))
+
+                // Rotate and Reset buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    TextButton(
+                        onClick = {
+                            rotationAngle = (rotationAngle + 90) % 360
+                            zoomFactor = 1f
+                            panOffset = Offset.Zero
+                        }
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.RotateRight, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Rodar 90°")
+                    }
+                    Spacer(modifier = Modifier.width(ViraSpacing.space16))
+                    TextButton(
+                        onClick = {
+                            rotationAngle = 0
+                            zoomFactor = 1f
+                            panOffset = Offset.Zero
+                        }
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Repor")
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(ViraSpacing.space16))
+
+                // Action buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(ViraSpacing.space12)
+                ) {
+                    TextButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Cancelar")
+                    }
+                    ViraPrimaryButton(
+                        text = "Guardar foto",
+                        modifier = Modifier.weight(1.2f),
+                        onClick = {
+                            val currentTotalScale = baseScale * zoomFactor
+                            val cropSizeInSrc = viewportPx / currentTotalScale
+
+                            val centerSrcX = (bmpW / 2f) - (panOffset.x / currentTotalScale)
+                            val centerSrcY = (bmpH / 2f) - (panOffset.y / currentTotalScale)
+
+                            val finalCropSize = cropSizeInSrc.roundToInt().coerceIn(1, minOf(displayedBitmap.width, displayedBitmap.height))
+                            val maxLeft = displayedBitmap.width - finalCropSize
+                            val maxTop = displayedBitmap.height - finalCropSize
+
+                            val left = (centerSrcX - finalCropSize / 2f).roundToInt().coerceIn(0, maxOf(0, maxLeft))
+                            val top = (centerSrcY - finalCropSize / 2f).roundToInt().coerceIn(0, maxOf(0, maxTop))
+
+                            val cropped = Bitmap.createBitmap(displayedBitmap, left, top, finalCropSize, finalCropSize)
+                            val outputSize = 512
+                            val scaled = if (finalCropSize != outputSize) {
+                                Bitmap.createScaledBitmap(cropped, outputSize, outputSize, true)
+                            } else {
+                                cropped
+                            }
+                            if (cropped != displayedBitmap && cropped != scaled) {
+                                cropped.recycle()
+                            }
+                            onSave(scaled)
+                        }
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable

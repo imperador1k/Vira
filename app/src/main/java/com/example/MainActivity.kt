@@ -217,12 +217,21 @@ fun ViraAppScreen() {
                 ViraBottomNav(
                     currentDestination = currentDestination,
                     onNavigateTo = { destination ->
-                        navController.navigate(destination.route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
+                        if (destination == TopLevelDestination.HOME) {
+                            navController.navigate(HomeRoute) {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    inclusive = false
+                                }
+                                launchSingleTop = true
                             }
-                            launchSingleTop = true
-                            restoreState = true
+                        } else {
+                            navController.navigate(destination.route) {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    saveState = true
+                                }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
                         }
                     }
                 )
@@ -245,7 +254,15 @@ fun ViraAppScreen() {
                 HomeScreen(
                     navController = navController,
                     onNavigateToRedemption = { navController.navigate(RedemptionRoute) },
-                    onNavigateToProfile = { navController.navigate(ProfileRoute) },
+                    onNavigateToProfile = {
+                        navController.navigate(ProfileRoute) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
                     onNavigateToMap = { navController.navigate(MapRootRoute) },
                     onNavigateToMapPicker = { navController.navigate(MapPickerRoute) },
                     onNavigateToSpot = { spotId -> navController.navigate(com.example.navigation.SpotRoute(spotId)) }
@@ -330,7 +347,7 @@ private fun ViraBottomNav(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
-                .padding(vertical = 8.dp),
+                .padding(horizontal = 8.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.SpaceAround,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -340,7 +357,7 @@ private fun ViraBottomNav(
                 } == true
 
                 val animatedColor by animateColorAsState(
-                    targetValue = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    targetValue = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
                     label = "navTabColor"
                 )
 
@@ -356,18 +373,26 @@ private fun ViraBottomNav(
                         }
                         .padding(vertical = 4.dp)
                 ) {
-                    Icon(
-                        imageVector = destination.icon,
-                        contentDescription = destination.titleTextId,
-                        tint = animatedColor,
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(if (isSelected) com.example.ui.theme.LocalViraExtraColors.current.cyanMuted.copy(alpha = 0.6f) else androidx.compose.ui.graphics.Color.Transparent)
+                            .padding(horizontal = 14.dp, vertical = 4.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = destination.icon,
+                            contentDescription = destination.titleTextId,
+                            tint = animatedColor,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = destination.titleTextId,
                         style = com.example.ui.theme.ViraTypography.Caption.copy(
                             fontSize = 11.sp,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium
                         ),
                         color = animatedColor
                     )

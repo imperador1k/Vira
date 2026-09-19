@@ -49,9 +49,10 @@ fun AuthDialog(
     onDismiss: () -> Unit,
     onSignIn: (String, String) -> Unit,
     onSignUp: (String, String) -> Unit,
-    onResetPassword: ((String) -> Unit)? = null
+    onResetPassword: ((String) -> Unit)? = null,
+    isSignInDefault: Boolean = false
 ) {
-    var mode by remember { mutableStateOf(AuthMode.SIGN_UP) }
+    var mode by remember(isSignInDefault) { mutableStateOf(if (isSignInDefault) AuthMode.SIGN_IN else AuthMode.SIGN_UP) }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var resetEmailSent by remember { mutableStateOf(false) }

@@ -2,6 +2,7 @@ package com.example.ui.components
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -205,17 +206,18 @@ fun ViraSecondaryButton(
         },
         interactionSource = interactionSource,
         modifier = modifier
-            .height(52.dp)
+            .height(50.dp)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
             },
         enabled = enabled,
         shape = RoundedCornerShape(ViraRadius.medium),
+        border = BorderStroke(1.dp, LocalViraExtraColors.current.cardBorder),
         colors = ButtonDefaults.buttonColors(
-            containerColor = LocalViraExtraColors.current.surfaceInteractive,
+            containerColor = LocalViraExtraColors.current.surfaceElevated,
             contentColor = MaterialTheme.colorScheme.onSurface,
-            disabledContainerColor = LocalViraExtraColors.current.surfaceInteractive.copy(alpha = 0.4f),
+            disabledContainerColor = LocalViraExtraColors.current.surfaceElevated.copy(alpha = 0.5f),
             disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
         ),
         elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp, pressedElevation = 0.dp),
@@ -264,7 +266,8 @@ fun ViraQuantityPill(
                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 onClick()
             },
-        color = if (isSelected) MaterialTheme.colorScheme.primary else LocalViraExtraColors.current.surfaceInteractive,
+        color = if (isSelected) MaterialTheme.colorScheme.primary else LocalViraExtraColors.current.surfaceElevated,
+        border = if (isSelected) null else BorderStroke(1.dp, LocalViraExtraColors.current.cardBorder.copy(alpha = 0.7f)),
         shape = RoundedCornerShape(ViraRadius.medium)
     ) {
         Box(
@@ -288,21 +291,23 @@ fun ViraIconButton(
     modifier: Modifier = Modifier
 ) {
     val haptic = LocalHapticFeedback.current
-    IconButton(
+    Surface(
         onClick = {
             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
             onClick()
         },
-        modifier = modifier.size(44.dp),
-        colors = IconButtonDefaults.iconButtonColors(
-            containerColor = LocalViraExtraColors.current.surfaceElevated,
-            contentColor = MaterialTheme.colorScheme.onSurface
-        )
+        modifier = modifier.size(42.dp),
+        shape = RoundedCornerShape(12.dp),
+        color = LocalViraExtraColors.current.surfaceElevated,
+        border = BorderStroke(1.dp, LocalViraExtraColors.current.cardBorder.copy(alpha = 0.7f))
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = contentDescription,
-            modifier = Modifier.size(ViraIconSize.medium)
-        )
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                modifier = Modifier.size(ViraIconSize.medium),
+                tint = MaterialTheme.colorScheme.onSurface
+            )
+        }
     }
 }

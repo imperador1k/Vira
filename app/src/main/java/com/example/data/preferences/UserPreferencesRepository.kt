@@ -3,6 +3,8 @@ package com.example.data.preferences
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.media.ExifInterface
 import android.net.Uri
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
@@ -69,16 +71,51 @@ class UserPreferencesRepository(private val context: Context) {
         }
     }
 
-    suspend fun saveAvatarFromUri(uri: Uri): Boolean = withContext(Dispatchers.IO) {
-        try {
-            val inputStream = context.contentResolver.openInputStream(uri) ?: return@withContext false
-            val bitmap = BitmapFactory.decodeStream(inputStream)
+    fun decodeAndFixOrientation(uri: Uri): Bitmap? {
+        return try {
+            val inputStream = context.contentResolver.openInputStream(uri) ?: return null
+            val rawBitmap = BitmapFactory.decodeStream(inputStream)
             inputStream.close()
-            if (bitmap == null) return@withContext false
+            if (rawBitmap == null) return null
 
-            val avatarFile = File(context.filesDir, "profile_avatar.jpg")
+            val exifStream = context.contentResolver.openInputStream(uri)
+            val orientation = if (exifStream != null) {
+                val exif = ExifInterface(exifStream)
+                val orient = exif.getAttributeInt(
+                    ExifInterface.TAG_ORIENTATION,
+                    ExifInterface.ORIENTATION_NORMAL
+                )
+                exifStream.close()
+                orient
+            } else ExifInterface.ORIENTATION_NORMAL
+
+            val matrix = Matrix()
+            when (orientation) {
+                ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+                ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+                ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+                ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.postScale(-1f, 1f)
+                ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.postScale(1f, -1f)
+                else -> return rawBitmap
+            }
+            val rotated = Bitmap.createBitmap(rawBitmap, 0, 0, rawBitmap.width, rawBitmap.height, matrix, true)
+            if (rotated != rawBitmap) {
+                rawBitmap.recycle()
+            }
+            rotated
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    suspend fun saveAvatarFromBitmap(bitmap: Bitmap): Boolean = withContext(Dispatchers.IO) {
+        try {
+            context.filesDir.listFiles { _, name -> name.startsWith("avatar_") || name == "profile_avatar.jpg" }
+                ?.forEach { it.delete() }
+
+            val avatarFile = File(context.filesDir, "avatar_${System.currentTimeMillis()}.jpg")
             val outputStream = FileOutputStream(avatarFile)
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 90, outputStream)
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 92, outputStream)
             outputStream.flush()
             outputStream.close()
 
@@ -91,12 +128,22 @@ class UserPreferencesRepository(private val context: Context) {
         }
     }
 
+    suspend fun saveAvatarFromUri(uri: Uri): Boolean = withContext(Dispatchers.IO) {
+        val bitmap = decodeAndFixOrientation(uri) ?: return@withContext false
+        val size = minOf(bitmap.width, bitmap.height)
+        val x = (bitmap.width - size) / 2
+        val y = (bitmap.height - size) / 2
+        val square = Bitmap.createBitmap(bitmap, x, y, size, size)
+        val scaled = Bitmap.createScaledBitmap(square, 512, 512, true)
+        if (square != bitmap && square != scaled) square.recycle()
+        if (scaled != bitmap) bitmap.recycle()
+        saveAvatarFromBitmap(scaled)
+    }
+
     suspend fun removeAvatar() = withContext(Dispatchers.IO) {
         try {
-            val avatarFile = File(context.filesDir, "profile_avatar.jpg")
-            if (avatarFile.exists()) {
-                avatarFile.delete()
-            }
+            context.filesDir.listFiles { _, name -> name.startsWith("avatar_") || name == "profile_avatar.jpg" }
+                ?.forEach { it.delete() }
             context.userPrefsDataStore.edit { prefs ->
                 prefs.remove(keyAvatarPath)
             }

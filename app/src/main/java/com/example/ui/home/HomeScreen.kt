@@ -26,6 +26,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -42,13 +43,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import android.graphics.BitmapFactory
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.example.ViraApp
 import com.example.data.auth.AuthState
+import com.example.data.preferences.UserProfileData
 import com.example.domain.Insight
+import java.io.File
 import com.example.ui.components.AuthDialog
 import com.example.ui.components.ViraEmptyState
 import com.example.ui.components.ViraInsightCard
@@ -92,6 +97,22 @@ fun HomeScreen(
     val sessionCount by appContainer.userPreferencesRepository.sessionCount.collectAsStateWithLifecycle(1)
     val lastReminderTime by appContainer.userPreferencesRepository.lastReminderTime.collectAsStateWithLifecycle(0L)
     val isReminderDismissedForever by appContainer.userPreferencesRepository.isReminderDismissedForever.collectAsStateWithLifecycle(false)
+    val profilePrefs by appContainer.userPreferencesRepository.profileData.collectAsStateWithLifecycle(
+        initialValue = UserProfileData()
+    )
+
+    val avatarBitmap = remember(profilePrefs.avatarFilePath) {
+        profilePrefs.avatarFilePath?.let { path ->
+            try {
+                val file = File(path)
+                if (file.exists()) {
+                    BitmapFactory.decodeFile(path)?.asImageBitmap()
+                } else null
+            } catch (_: Exception) {
+                null
+            }
+        }
+    }
 
     var dismissedThisSession by rememberSaveable { mutableStateOf(false) }
     var showAuthDialog by remember { mutableStateOf(false) }
@@ -153,7 +174,11 @@ fun HomeScreen(
                     .padding(innerPadding)
                     .padding(horizontal = ViraSpacing.space24)
             ) {
-                ViraTopBar(title = "Vira", onProfileClick = onNavigateToProfile)
+                ViraTopBar(
+                    title = "Vira",
+                    avatarBitmap = avatarBitmap,
+                    onProfileClick = onNavigateToProfile
+                )
                 Spacer(modifier = Modifier.height(ViraSpacing.space32))
 
                 if (shouldShowReminder) {
@@ -172,11 +197,11 @@ fun HomeScreen(
                 }
 
                 ViraEmptyState(
-                    title = "A tua primeira recolha\ncomeça aqui.",
-                    subtitle = "Regista as embalagens que encontrares.\nA Vira acompanha o teu progresso, valor a recuperar e os teus locais mais produtivos.",
+                    title = "Começa a recuperar valor.",
+                    subtitle = "Cada embalagem retornável equivale a 0,10 €. Regista as tuas recolhas e acompanha o teu saldo, devoluções e pontos mais produtivos.",
                     ctaText = "+ Registar primeira recolha",
                     onCtaClick = { showBottomSheet = true },
-                    footnote = "1 embalagem elegível = 0,10 €"
+                    footnote = "Modo local ativo • 100% privado no teu telemóvel"
                 )
             }
         } else {
@@ -201,6 +226,7 @@ fun HomeScreen(
                     ViraTopBar(
                         title = "Vira",
                         subtitle = greeting,
+                        avatarBitmap = avatarBitmap,
                         onProfileClick = onNavigateToProfile
                     )
                     Spacer(modifier = Modifier.height(ViraSpacing.space16))
@@ -224,27 +250,64 @@ fun HomeScreen(
                     }
                 }
 
-                // 1. HERO RECOLHA SECTION (Dominant collection amount)
+                // 1. HERO RECOLHA SECTION (Dominant collection amount in refined card)
                 item {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        Text(
-                            text = "${uiState.todayContainers}",
-                            style = ViraTypography.DisplayLarge,
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
-                        Spacer(modifier = Modifier.height(ViraSpacing.space4))
-                        Text(
-                            text = "EMBALAGENS",
-                            style = ViraTypography.Eyebrow,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(ViraSpacing.space8))
-                        Text(
-                            text = "${FormatUtils.formatCurrency(uiState.todayEstimatedValue)} potencial",
-                            style = ViraTypography.Body,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.height(ViraSpacing.space24))
+                    ViraSurfaceCard(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(7.dp)
+                                        .clip(androidx.compose.foundation.shape.CircleShape)
+                                        .background(MaterialTheme.colorScheme.primary)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "RECOLHA DE HOJE",
+                                    style = ViraTypography.Eyebrow,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            if (uiState.todayEstimatedValue > 0) {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                                    shape = RoundedCornerShape(ViraRadius.small)
+                                ) {
+                                    Text(
+                                        text = "+ ${FormatUtils.formatCurrency(uiState.todayEstimatedValue)}",
+                                        style = ViraTypography.Caption.copy(
+                                            fontSize = 12.sp,
+                                            fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
+                                        ),
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(ViraSpacing.space12))
+                        Row(
+                            verticalAlignment = Alignment.Bottom,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "${uiState.todayContainers}",
+                                style = ViraTypography.DisplayLarge,
+                                color = MaterialTheme.colorScheme.onBackground
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = if (uiState.todayContainers == 1) "embalagem hoje" else "embalagens hoje",
+                                style = ViraTypography.BodySecondary,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(ViraSpacing.space16))
 
                         // HERO PRIMARY ACTION: "+ Registar recolha"
                         com.example.ui.components.ViraHeroButton(
@@ -252,7 +315,7 @@ fun HomeScreen(
                             onClick = { showBottomSheet = true }
                         )
                     }
-                    Spacer(modifier = Modifier.height(ViraSpacing.space32))
+                    Spacer(modifier = Modifier.height(ViraSpacing.space24))
                 }
 
                 // 2. CONTEXTUAL PROGRESS: Por devolver

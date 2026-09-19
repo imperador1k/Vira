@@ -1,23 +1,34 @@
 package com.example.ui.components
 
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
+import com.example.ui.theme.LocalViraExtraColors
 import com.example.ui.theme.ViraIconSize
 import com.example.ui.theme.ViraSpacing
 import com.example.ui.theme.ViraTypography
@@ -26,6 +37,7 @@ import com.example.ui.theme.ViraTypography
 fun ViraTopBar(
     title: String = "Vira",
     subtitle: String? = null,
+    avatarBitmap: ImageBitmap? = null,
     onProfileClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -37,13 +49,24 @@ fun ViraTopBar(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column {
-            Text(
-                text = title,
-                style = ViraTypography.PageTitle,
-                color = MaterialTheme.colorScheme.primary
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = title,
+                    style = ViraTypography.ScreenTitle,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                if (title == "Vira") {
+                    Box(
+                        modifier = Modifier
+                            .padding(start = 6.dp)
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primary)
+                    )
+                }
+            }
             if (subtitle != null) {
-                Spacer(modifier = Modifier.height(ViraSpacing.space4))
+                Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = subtitle,
                     style = ViraTypography.BodySecondary,
@@ -52,11 +75,35 @@ fun ViraTopBar(
             }
         }
         if (onProfileClick != null) {
-            ViraIconButton(
-                icon = Icons.Default.Person,
-                contentDescription = "Perfil",
-                onClick = onProfileClick
-            )
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .clip(CircleShape)
+                    .background(LocalViraExtraColors.current.surfaceElevated)
+                    .border(
+                        1.5.dp,
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                        CircleShape
+                    )
+                    .clickable(onClick = onProfileClick),
+                contentAlignment = Alignment.Center
+            ) {
+                if (avatarBitmap != null) {
+                    Image(
+                        bitmap = avatarBitmap,
+                        contentDescription = "Perfil",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Person,
+                        contentDescription = "Perfil",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(ViraIconSize.medium)
+                    )
+                }
+            }
         }
     }
 }
@@ -76,14 +123,14 @@ fun ViraSectionHeader(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = title.uppercase(),
+            text = title,
             style = ViraTypography.SectionTitle,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onBackground
         )
         if (actionText != null && onActionClick != null) {
             Text(
                 text = actionText,
-                style = ViraTypography.Caption,
+                style = ViraTypography.Caption.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier
                     .clickable(onClick = onActionClick)
